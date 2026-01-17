@@ -1,65 +1,52 @@
 local player = game.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
 local isLagging = false
 local packetDelay = 0.5
-local targetLagDuration = 2.0
 local originalNetworkSettings = {}
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 250, 0, 200)
+mainFrame.Size = UDim2.new(0, 250, 0, 150)
 mainFrame.Position = UDim2.new(0, 10, 0, 10)
 mainFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
 mainFrame.Parent = screenGui
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(0, 230, 0, 30)
-titleLabel.Position = UDim2.new(0, 10, 0, 10)
-titleLabel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-titleLabel.TextColor3 = Color3.new(1, 1, 1)
-titleLabel.Text = "Advanced Lag Switch"
-titleLabel.Parent = mainFrame
-
-local toggleButton = Instance.new("TextButton")
-toggleButton.Size = UDim2.new(0, 230, 0, 30)
-toggleButton.Position = UDim2.new(0, 10, 0, 50)
-toggleButton.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-toggleButton.TextColor3 = Color3.new(1, 1, 1)
-toggleButton.Text = "Toggle Lag Switch"
-toggleButton.Parent = mainFrame
+local startButton = Instance.new("TextButton")
+startButton.Size = UDim2.new(0, 230, 0, 40)
+startButton.Position = UDim2.new(0, 10, 0, 10)
+startButton.BackgroundColor3 = Color3.new(0, 1, 0)
+startButton.TextColor3 = Color3.new(1, 1, 1)
+startButton.Text = "Start"
+startButton.Font = Enum.Font.SourceSansBold
+startButton.TextSize = 20
+startButton.Parent = mainFrame
 
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(0, 230, 0, 30)
-statusLabel.Position = UDim2.new(0, 10, 0, 90)
+statusLabel.Position = UDim2.new(0, 10, 0, 60)
 statusLabel.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
 statusLabel.TextColor3 = Color3.new(1, 1, 1)
 statusLabel.Text = "Status: OFF"
+statusLabel.Font = Enum.Font.SourceSans
+statusLabel.TextSize = 18
 statusLabel.Parent = mainFrame
 
 local delayLabel = Instance.new("TextLabel")
 delayLabel.Size = UDim2.new(0, 230, 0, 20)
-delayLabel.Position = UDim2.new(0, 10, 0, 130)
+delayLabel.Position = UDim2.new(0, 10, 0, 100)
 delayLabel.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
 delayLabel.TextColor3 = Color3.new(1, 1, 1)
-delayLabel.Text = "Packet Delay: 0.5s"
+delayLabel.Text = "Lag Intensity: 50%"
+delayLabel.Font = Enum.Font.SourceSans
+delayLabel.TextSize = 16
 delayLabel.Parent = mainFrame
 
 local delaySlider = Instance.new("TextButton")
 delaySlider.Size = UDim2.new(0, 230, 0, 10)
-delaySlider.Position = UDim2.new(0, 10, 0, 150)
+delaySlider.Position = UDim2.new(0, 10, 0, 130)
 delaySlider.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
 delaySlider.Parent = mainFrame
-
-local lagOthersButton = Instance.new("TextButton")
-lagOthersButton.Size = UDim2.new(0, 230, 0, 30)
-lagOthersButton.Position = UDim2.new(0, 10, 0, 170)
-lagOthersButton.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-lagOthersButton.TextColor3 = Color3.new(1, 1, 1)
-lagOthersButton.Text = "Lag Other Players"
-lagOthersButton.Parent = mainFrame
 
 local function manipulatePackets(enabled)
     if enabled then
@@ -77,61 +64,19 @@ local function manipulatePackets(enabled)
     end
 end
 
-local function manipulateVisuals(enabled)
-    if enabled then
-        local originalPosition = character.PrimaryPart.Position
-        local visualOffset = Vector3.new(0, 5, 0)
-        
-        for _, otherPlayer in pairs(game.Players:GetPlayers()) do
-            if otherPlayer ~= player then
-                local otherCharacter = otherPlayer.Character
-                if otherCharacter and otherCharacter:FindFirstChild("HumanoidRootPart") then
-                    otherCharacter.HumanoidRootPart:SetNetworkOwner(nil)
-                    otherCharacter.HumanoidRootPart.Position = otherCharacter.HumanoidRootPart.Position + visualOffset
-                end
-            end
-        end
-        
-        game:GetService("Debris"):AddItem(character, 0.1)
-        character:MoveTo(originalPosition)
-    else
-        if character and character:FindFirstChild("HumanoidRootPart") then
-            character.HumanoidRootPart:SetNetworkOwner(player)
-        end
-    end
-end
-
-local function lagOtherPlayers()
-    for _, otherPlayer in pairs(game.Players:GetPlayers()) do
-        if otherPlayer ~= player then
-            local otherCharacter = otherPlayer.Character
-            if otherCharacter and otherCharacter:FindFirstChild("Humanoid") then
-                otherCharacter.Humanoid.WalkSpeed = 0.1
-                game:GetService("Debris"):AddItem(otherCharacter, targetLagDuration)
-                
-                local networkPeer = game:GetService("NetworkClient"):GetServerPeer()
-                if networkPeer then
-                    networkPeer:SendPacket({
-                        Type = "LagOther",
-                        Target = otherPlayer.UserId,
-                        Duration = targetLagDuration
-                    })
-                end
-            end
-        end
-    end
-end
-
-toggleButton.MouseButton1Click:Connect(function()
+startButton.MouseButton1Click:Connect(function()
     isLagging = not isLagging
     statusLabel.Text = isLagging and "Status: ON" or "Status: OFF"
     
+    if isLagging then
+        startButton.Text = "Stop"
+        startButton.BackgroundColor3 = Color3.new(1, 0, 0)
+    else
+        startButton.Text = "Start"
+        startButton.BackgroundColor3 = Color3.new(0, 1, 0)
+    end
+    
     manipulatePackets(isLagging)
-    manipulateVisuals(isLagging)
-end)
-
-lagOthersButton.MouseButton1Click:Connect(function()
-    lagOtherPlayers()
 end)
 
 delaySlider.MouseButton1Down:Connect(function()
@@ -142,7 +87,7 @@ delaySlider.MouseButton1Down:Connect(function()
         local clampedX = math.clamp(relativeX, 0, delaySlider.AbsoluteSize.X)
         local percentage = clampedX / delaySlider.AbsoluteSize.X
         packetDelay = percentage * 2.0
-        delayLabel.Text = "Packet Delay: " .. string.format("%.1f", packetDelay) .. "s"
+        delayLabel.Text = "Lag Intensity: " .. math.floor(percentage * 100) .. "%"
         
         if isLagging then
             manipulatePackets(false)
@@ -155,14 +100,4 @@ delaySlider.MouseButton1Down:Connect(function()
             updateDelay:Disconnect()
         end
     end)
-end)
-
-game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
-    if not gameProcessed then
-        if input.KeyCode == Enum.KeyCode.L then
-            toggleButton.MouseButton1Click:Fire()
-        elseif input.KeyCode == Enum.KeyCode.K then
-            lagOtherPlayers()
-        end
-    end
 end)
