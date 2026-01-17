@@ -108,5 +108,3 @@ for _, player in ipairs(Players:GetPlayers()) do
     onPlayerAdded(player)
 end
 Players.PlayerAdded:Connect(onPlayerAdded)
-Players.PlayerAdded:Connect(onPlayerAdded)
-
