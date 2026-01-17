@@ -2,6 +2,9 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
+local FLY_SPEED = 50
+local WALK_SPEED = 100
+
 local function onPlayerAdded(player)
     player.CharacterAdded:Connect(function(character)
         local humanoid = character:WaitForChild("Humanoid")
@@ -29,7 +32,7 @@ local function onPlayerAdded(player)
         local BodyGyro
         
         local function increaseWalkSpeed()
-            humanoid.WalkSpeed = 100
+            humanoid.WalkSpeed = WALK_SPEED
         end
         
         local function enableFly()
@@ -94,7 +97,7 @@ local function onPlayerAdded(player)
         RunService.RenderStepped:Connect(function()
             if isFlying and BodyVelocity and BodyGyro then
                 local camera = workspace.CurrentCamera
-                BodyVelocity.Velocity = (camera.CoordinateFrame.lookVector * Vector3.new(1, 0, 1)).unit * 50
+                BodyVelocity.Velocity = (camera.CoordinateFrame.lookVector * Vector3.new(1, 0, 1)).unit * FLY_SPEED
                 BodyGyro.cframe = camera.CoordinateFrame * CFrame.Angles(0, math.rad(rotation), 0)
             end
         end)
@@ -105,3 +108,5 @@ for _, player in ipairs(Players:GetPlayers()) do
     onPlayerAdded(player)
 end
 Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerAdded:Connect(onPlayerAdded)
+
