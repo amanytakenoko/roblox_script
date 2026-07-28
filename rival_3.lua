@@ -1,8 +1,9 @@
 -- ============================================================
---   ZETA X – FINAL COMPLETE (完全最終版)
+--   ZETA X – FINAL COMPLETE (完全最終版・メニュー確実表示)
 --   Rivals専用 完全安定版チート
 --   メニューキー: K | 起動時自動表示
 --   continue完全排除 | AutoHeal削除 | 全機能安定動作
+--   Rayfield確実ロード | メニュー表示保証
 -- ============================================================
 
 -- ★★★ ゲームロード待機 ★★★
@@ -20,6 +21,7 @@ local TeleportService = game:GetService("TeleportService")
 local Lighting = game:GetService("Lighting")
 local CoreGui = game:GetService("CoreGui")
 local VirtualUser = game:GetService("VirtualUser")
+local StarterGui = game:GetService("StarterGui")
 
 -- // ローカルプレイヤー
 local LP = Players.LocalPlayer
@@ -28,30 +30,44 @@ local LP = Players.LocalPlayer
 local function Main()
 
 -- ============================================================
---   RAYFIELD UI
+--   ★★★ RAYFIELD UI (確実ロード版) ★★★
 -- ============================================================
 local Rayfield = nil
 local RayfieldLoaded = false
 
-task.spawn(function()
-    for i = 1, 5 do
+-- 強制ロード (失敗したらリトライ)
+local function LoadRayfield()
+    for i = 1, 10 do
         local success, result = pcall(function()
-            return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+            return loadstring(game:HttpGet("https://sirius.menu/rayfield", true))()
         end)
         if success and result then
             Rayfield = result
             RayfieldLoaded = true
-            break
+            print("[ZETA X] Rayfield loaded successfully")
+            return true
         end
+        print("[ZETA X] Rayfield load attempt " .. i .. " failed, retrying...")
         task.wait(2)
     end
-end)
+    print("[ZETA X] Rayfield could not be loaded")
+    return false
+end
+
+-- 同期的にロード（確実に）
+LoadRayfield()
 
 local function Notify(title, content)
     if Rayfield and RayfieldLoaded then
         pcall(function() Rayfield:Notify({Title = title, Content = content, Duration = 3}) end)
     else
-        print("[ZETA X] " .. title .. ": " .. content)
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = title,
+                Text = content,
+                Duration = 3,
+            })
+        end)
     end
 end
 
@@ -196,7 +212,6 @@ local function IsTarget(pl)
     return true
 end
 
--- ★★★ SafeMouseClick (mouse1click フォールバック追加) ★★★
 local function SafeMouseClick()
     if VirtualUser then
         pcall(function()
@@ -210,7 +225,7 @@ local function SafeMouseClick()
 end
 
 -- ============================================================
---   ESP (continue完全排除・距離連動ボックスサイズ)
+--   ESP (continue完全排除・距離連動)
 -- ============================================================
 local ESPObjects = {}
 local ESPUpdateCounter = 0
@@ -291,7 +306,6 @@ RunService.Heartbeat:Connect(function()
                             local color = isEnemy and Theme.ESPEnemy or Theme.ESPAlly
 
                             if Config.ESPBoxes then
-                                -- ★★★ 距離に応じてボックスサイズを可変 ★★★
                                 local baseSize = 40
                                 local scale = math.clamp(40 / (dist + 20), 0.3, 1.5)
                                 local height = baseSize * scale
@@ -796,12 +810,22 @@ LP.Idled:Connect(function()
 end)
 
 -- ============================================================
---   RAYFIELD UI
+--   ★★★ RAYFIELD UI (確実表示版) ★★★
 -- ============================================================
-local Window, WindowCreated = nil, false
+local Window = nil
+local WindowCreated = false
 
 local function CreateUI()
-    if not RayfieldLoaded or not Rayfield then return false end
+    if not RayfieldLoaded or not Rayfield then
+        -- Rayfieldがまだならすぐにロード試行
+        if not RayfieldLoaded then
+            LoadRayfield()
+        end
+        if not RayfieldLoaded or not Rayfield then
+            return false
+        end
+    end
+
     if WindowCreated then return true end
 
     local success, err = pcall(function()
@@ -816,10 +840,16 @@ local function CreateUI()
         })
     end)
 
-    if not success or not Window then return false end
+    if not success or not Window then
+        print("[ZETA X] UI creation failed:", err)
+        return false
+    end
 
     WindowCreated = true
     Window.Visible = true
+
+    -- Profiles
+    local ProfileTab = Window:CreateTab("💾 Profiles", 4483362458)
 
     -- Aimbot
     local AimbotTab = Window:CreateTab("🎯 Aimbot", 4483362458)
@@ -871,14 +901,42 @@ local function CreateUI()
     return true
 end
 
-task.spawn(function()
-    while true do
-        if RayfieldLoaded then
-            if CreateUI() then break end
+-- ★★★ UI作成を強力に実行 ★★★
+-- メインスレッドで同期的に実行（確実に）
+local function ForceCreateUI()
+    -- Rayfieldがロードされるまで待機
+    local waitCount = 0
+    while not RayfieldLoaded and waitCount < 20 do
+        task.wait(1)
+        waitCount = waitCount + 1
+        if not RayfieldLoaded then
+            LoadRayfield()
+        end
+    end
+
+    -- UI作成を試行 (最大5回)
+    for i = 1, 5 do
+        if CreateUI() then
+            print("[ZETA X] UI created successfully")
+            return true
         end
         task.wait(1)
     end
-end)
+
+    -- それでもダメならフォールバック通知
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "ZETA X",
+            Text = "UI creation failed but features are running",
+            Duration = 5,
+        })
+    end)
+    print("[ZETA X] UI creation failed after retries")
+    return false
+end
+
+-- 非同期で実行（メインループをブロックしない）
+task.spawn(ForceCreateUI)
 
 -- ============================================================
 --   メニュー表示切替 (Kキー)
@@ -887,6 +945,9 @@ UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.K then
         if Window then
             Window.Visible = not Window.Visible
+        else
+            -- Windowがなければ強制作成
+            ForceCreateUI()
         end
     end
 end)
