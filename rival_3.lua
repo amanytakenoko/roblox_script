@@ -1,6 +1,6 @@
 -- ============================================================
---   ZETA X – ULTIMATE FINAL (完全版)
---   全構文エラー修正 | 全改善点適用 | マッチ切り替え完全対応
+--   ZETA X – ULTIMATE FINAL (完全版・完結)
+--   全構文エラー修正 | StarterGui スコープエラー対策済み
 --   メニューキー: K | ブルーパープルテーマ
 -- ============================================================
 
@@ -14,10 +14,7 @@ if not _G._clientalert then
     _G._clientalert = function() end
 end
 
--- ★★★ 全体をpcallで保護 ★★★
-local function Main()
-
--- // サービス
+-- ★★★ トップレベルでサービスを定義 ★★★
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -27,10 +24,16 @@ local TeleportService = game:GetService("TeleportService")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
+local StarterGui = game:GetService("StarterGui")  -- ★★★ トップレベルで定義 ★★★
 local VirtualUser = game:GetService("VirtualUser")
 
 -- // ローカルプレイヤー
 local LP = Players.LocalPlayer
+
+-- ★★★ 全体をpcallで保護 ★★★
+local function Main()
+
+-- // サービス（Main内では再定義せず、トップレベルの変数を使用）
 
 -- ============================================================
 --   ★★★ カメラ取得 ★★★
@@ -67,6 +70,7 @@ end)
 --   ★★★ 安全な通知関数 (完全エラー対策) ★★★
 -- ============================================================
 local function SafeNotify(title, content, duration)
+    -- Rayfield優先
     if Rayfield and RayfieldLoaded then
         local ok, err = pcall(function()
             Rayfield:Notify({Title = title, Content = content, Duration = duration or 3})
@@ -74,10 +78,10 @@ local function SafeNotify(title, content, duration)
         if ok then return end
     end
 
+    -- フォールバック: StarterGui
     local ok, err = pcall(function()
-        local coreGui = game:GetService("CoreGui")
-        if coreGui then
-            coreGui:SetCore("SendNotification", {
+        if StarterGui then
+            StarterGui:SetCore("SendNotification", {
                 Title = title,
                 Text = content,
                 Duration = duration or 3,
@@ -1335,12 +1339,12 @@ while true do task.wait(10) end
 -- ★★★ Main関数終了 ★★★
 end
 
--- ★★★ pcallで実行 ★★★
+-- ★★★ pcallで実行 (StarterGuiはトップレベルで定義済み) ★★★
 local ok, err = pcall(Main)
 if not ok then
     warn("[ZETA X] スクリプト実行エラー: " .. tostring(err))
     pcall(function()
-        CoreGui:SetCore("SendNotification", {
+        StarterGui:SetCore("SendNotification", {
             Title = "ZETA X",
             Text = "エラーが発生しましたが、一部機能は動作します",
             Duration = 5,
