@@ -1,8 +1,7 @@
 -- ============================================================
 --   ZETA X – ULTIMATE FINAL (完全版)
---   Roblox Lua完全対応 | goto削除 | 全バグ修正
---   ESP+Aimbot同時安定 | マッチ切り替え完全対応
---   ブルーパープルテーマ | Rivals専用
+--   全バグ修正 | 壁越しナイフ | メニューキー: K
+--   Roblox Lua完全対応 | Rivals専用
 -- ============================================================
 
 -- ★★★ ゲーム完全ロード待機 ★★★
@@ -35,7 +34,7 @@ local LP = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
 -- ============================================================
---   デバッグ (本番では無効化)
+--   デバッグ
 -- ============================================================
 local function Debug(msg) end
 
@@ -71,6 +70,7 @@ local Theme = {
 --   設定
 -- ============================================================
 local Config = {
+    -- Aimbot
     AimbotEnabled = false,
     AimbotMode = "Sticky",
     AimbotFOV = 120,
@@ -82,6 +82,16 @@ local Config = {
     AimbotTriggerbot = false,
     AimbotAutoShoot = false,
     AimbotMaxDist = 5000,
+
+    -- Knife (Wall Penetration)
+    KnifeAutoHit = false,
+    KnifeRange = 50,
+    KnifeWarp = true,
+    KnifeWallPenetrate = true,
+    KnifeAutoAim = true,
+    KnifeAttackInterval = 0.15,
+
+    -- ESP
     ESPEnabled = false,
     ESPBoxes = true,
     ESPNames = true,
@@ -90,6 +100,8 @@ local Config = {
     ESPHealthBar = true,
     ESPTeamColor = true,
     ESPMaxDist = 1000,
+
+    -- Movement
     SpeedEnabled = false,
     SpeedValue = 32,
     FlyEnabled = false,
@@ -97,14 +109,17 @@ local Config = {
     NoclipEnabled = false,
     InfiniteJump = false,
     BunnyHop = false,
+
+    -- Combat
     KillAura = false,
     KillAuraRange = 15,
     AutoHeal = false,
     HealAmount = 20,
+
+    -- Misc
     AntiAFK = true,
     NoFog = false,
     FullBright = false,
-    RageMode = false,
     CurrentProfile = "Default",
 }
 
@@ -286,9 +301,9 @@ local function GetDistance(pl)
     return math.huge
 end
 
-local function IsVisible(pl, maxDist)
+local function IsVisible(pl, maxDist, boneName)
     if not Camera then return false end
-    local bone = GetBone(pl, Config.AimbotBone)
+    local bone = GetBone(pl, boneName or Config.AimbotBone)
     if not bone then return false end
     local startPos = Camera.CFrame.Position
     local dir = (bone.Position - startPos)
@@ -327,6 +342,12 @@ local CachedTarget = nil
 local CachedTargetTime = 0
 local CACHE_DURATION = 0.05
 
+-- ★★★ タイマー変数 ★★★
+local LastTriggerTime = 0
+local LastAutoShootTime = 0
+local KillAuraLastTime = 0
+local KnifeLastAttack = 0
+
 local function GetClosestTarget()
     local now = tick()
     if CachedTarget and (now - CachedTargetTime) < CACHE_DURATION then
@@ -345,7 +366,7 @@ local function GetClosestTarget()
         if IsTarget(pl) then
             local visOk = true
             if Config.AimbotVisCheck then
-                visOk = IsVisible(pl, Config.AimbotMaxDist)
+                visOk = IsVisible(pl, Config.AimbotMaxDist, Config.AimbotBone)
             end
             if visOk then
                 local bone = GetBone(pl, Config.AimbotBone)
@@ -370,9 +391,132 @@ local function GetClosestTarget()
     return target
 end
 
-local LastShot = 0
-local KillAuraLastTime = 0
+-- ============================================================
+--   ★★★ 壁越しナイフ (Heartbeat) ★★★
+-- ============================================================
+local function GetClosestEnemyForKnife()
+    if not HumanoidRootPart then return nil end
+    local closest = nil
+    local minDist = Config.KnifeRange
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if IsTarget(pl) then
+            local d = GetDistance(pl)
+            if d < minDist then
+                minDist = d
+                closest = pl
+            end
+        end
+    end
+    return closest
+end
 
+local function FindKnifeRemote()
+    local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:FindFirstChild("RemoteEvents")
+    if remotes then
+        for _, name in ipairs({"KnifeHit", "MeleeHit", "SwordHit", "Attack", "Hit", "Damage"}) do
+            local r = remotes:FindFirstChild(name)
+            if r then return r end
+        end
+    end
+    for _, name in ipairs({"KnifeRemote", "MeleeRemote", "AttackRemote", "HitRemote"}) do
+        local r = ReplicatedStorage:FindFirstChild(name)
+        if r then return r end
+    end
+    return nil
+end
+
+local KnifeRemote = nil
+local KnifeRemoteSearched = false
+local KnifeRemoteSearchTimer = 0
+
+RunService.Heartbeat:Connect(function()
+    if not Config.KnifeAutoHit then return end
+    if not Character or not Humanoid or not HumanoidRootPart then return end
+
+    local target = GetClosestEnemyForKnife()
+    if not target then return end
+
+    local targetRoot = GetRootPart(target)
+    if not targetRoot then return end
+
+    local now = tick()
+    if now - KnifeLastAttack < Config.KnifeAttackInterval then return end
+
+    -- ★★★ 自動照準 ★★★
+    if Config.KnifeAutoAim then
+        local lookAtCF = CFrame.lookAt(HumanoidRootPart.Position, targetRoot.Position)
+        HumanoidRootPart.CFrame = lookAtCF
+    end
+
+    -- ★★★ ワープスタブ (安全チェック付き) ★★★
+    if Config.KnifeWarp then
+        local warpPos = targetRoot.CFrame * CFrame.new(0, 0, 3)
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Blacklist
+        params.FilterDescendantsInstances = {Character, target.Character}
+        local result = Workspace:Raycast(HumanoidRootPart.Position, (warpPos.Position - HumanoidRootPart.Position).Unit * 50, params)
+        if not result then
+            HumanoidRootPart.CFrame = warpPos
+        else
+            warpPos = targetRoot.CFrame * CFrame.new(0, 4, 3)
+            local result2 = Workspace:Raycast(HumanoidRootPart.Position, (warpPos.Position - HumanoidRootPart.Position).Unit * 50, params)
+            if not result2 then
+                HumanoidRootPart.CFrame = warpPos
+            end
+        end
+    end
+
+    -- ★★★ 壁越し攻撃 ★★★
+    if Config.KnifeWallPenetrate then
+        if not KnifeRemoteSearched or (tick() - KnifeRemoteSearchTimer > 10) then
+            KnifeRemoteSearched = true
+            KnifeRemoteSearchTimer = tick()
+            KnifeRemote = FindKnifeRemote()
+            if KnifeRemote and RayfieldLoaded and Rayfield then
+                Rayfield:Notify({
+                    Title = "🔪 Knife Remote Found",
+                    Content = "Wall penetration active!",
+                    Duration = 3,
+                })
+            end
+        end
+
+        if KnifeRemote then
+            Safe(function()
+                if KnifeRemote.FireServer then
+                    KnifeRemote:FireServer(target.Character or target)
+                elseif KnifeRemote.InvokeServer then
+                    KnifeRemote:InvokeServer(target.Character or target)
+                end
+            end)
+            KnifeLastAttack = now
+        else
+            if VirtualUser then
+                Safe(function()
+                    VirtualUser:CaptureController()
+                    VirtualUser:Button1Down(Vector2.new(0, 0))
+                    task.wait(0.05)
+                    VirtualUser:Button1Up(Vector2.new(0, 0))
+                end)
+                KnifeLastAttack = now
+            end
+        end
+    else
+        if VirtualUser then
+            Safe(function()
+                VirtualUser:CaptureController()
+                VirtualUser:Button1Down(Vector2.new(0, 0))
+                task.wait(0.05)
+                VirtualUser:Button1Up(Vector2.new(0, 0))
+            end)
+            KnifeLastAttack = now
+        end
+    end
+end)
+
+-- ============================================================
+--   AIMBOT メインループ
+-- ============================================================
 RunService.RenderStepped:Connect(function()
     if not Config.AimbotEnabled then return end
     if not Character or not HumanoidRootPart or not Camera then return end
@@ -411,10 +555,10 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    if Config.AimbotTriggerbot or Config.AimbotAutoShoot then
+    -- ★★★ Triggerbot (専用タイマー) ★★★
+    if Config.AimbotTriggerbot then
         local now = tick()
-        local interval = Config.AimbotTriggerbot and 0.12 or 0.05
-        if now - LastShot > interval then
+        if now - LastTriggerTime > 0.12 then
             Safe(function()
                 if VirtualUser then
                     VirtualUser:CaptureController()
@@ -424,7 +568,24 @@ RunService.RenderStepped:Connect(function()
                     mouse1click()
                 end
             end)
-            LastShot = now
+            LastTriggerTime = now
+        end
+    end
+
+    -- ★★★ Auto-Shoot (専用タイマー) ★★★
+    if Config.AimbotAutoShoot then
+        local now = tick()
+        if now - LastAutoShootTime > 0.05 then
+            Safe(function()
+                if VirtualUser then
+                    VirtualUser:CaptureController()
+                    VirtualUser:Button1Down(Vector2.new(0, 0))
+                    VirtualUser:Button1Up(Vector2.new(0, 0))
+                else
+                    mouse1click()
+                end
+            end)
+            LastAutoShootTime = now
         end
     end
 end)
@@ -462,7 +623,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   ESP (goto完全削除・ifネストで実装)
+--   ESP
 -- ============================================================
 local ESPObjects = {}
 local ESPUpdateCounter = 0
@@ -524,23 +685,17 @@ RunService.Heartbeat:Connect(function()
 
     for _, pl in ipairs(Players:GetPlayers()) do
         if pl ~= LP then
-            if not ESPObjects[pl] then
-                Safe(CreateESP, pl)
-            end
-
+            if not ESPObjects[pl] then Safe(CreateESP, pl) end
             if ESPObjects[pl] then
                 local dist = GetDistance(pl)
-
                 if dist <= Config.ESPMaxDist then
                     local ch = pl.Character
                     local root = GetRootPart(pl)
                     local hum = GetHumanoid(pl)
-
                     if ch and root and hum then
                         local headPos = ch:FindFirstChild("Head") and ch.Head.Position or root.Position + Vector3.new(0, 2, 0)
                         local headScr, onH = WorldToViewport(headPos)
                         local visible = onH
-
                         local objs = ESPObjects[pl]
                         if objs then
                             local isEnemy = IsEnemy(pl)
@@ -553,7 +708,6 @@ RunService.Heartbeat:Connect(function()
                                 local height = math.abs(headScr.Y - feetScr.Y)
                                 if height < 1 then height = 30 end
                                 local width = height * 0.45
-
                                 if objs.box then
                                     Safe(function()
                                         objs.box.Visible = true
@@ -562,7 +716,6 @@ RunService.Heartbeat:Connect(function()
                                         objs.box.Position = Vector2.new(headScr.X - width/2, headScr.Y)
                                     end)
                                 end
-
                                 if Config.ESPHealthBar then
                                     local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
                                     local barH = height
@@ -664,7 +817,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---   NOCLIP (メモリリーク対策済み)
+--   NOCLIP (接続一元管理)
 -- ============================================================
 local NoclipCachedParts = {}
 local NoclipConnection = nil
@@ -691,10 +844,10 @@ local function SetupNoclipWatcher(char)
     end)
 end
 
-task.spawn(function()
-    while not Character do task.wait() end
+-- 初回適用
+if Character then
     SetupNoclipWatcher(Character)
-end)
+end
 
 RunService.Stepped:Connect(function()
     if not Config.NoclipEnabled then
@@ -824,14 +977,17 @@ RunService.Heartbeat:Connect(function()
     KillAuraLastTime = now
 end)
 
--- AutoHeal (リモート優先、フォールバックなし)
+-- ★★★ AutoHeal (定期的にリモート再検索) ★★★
 local HealRemote = nil
+local HealRemoteSearchTimer = 0
 local HealRemoteSearched = false
 
 RunService.Heartbeat:Connect(function()
     if Config.AutoHeal and Humanoid and Humanoid.Health < Humanoid.MaxHealth then
-        if not HealRemoteSearched then
+        local now = tick()
+        if not HealRemoteSearched or (now - HealRemoteSearchTimer > 10) then
             HealRemoteSearched = true
+            HealRemoteSearchTimer = now
             local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
             for _, name in ipairs({"Heal", "HealPlayer", "SetHealth", "Health"}) do
                 local r = remotes:FindFirstChild(name)
@@ -843,7 +999,7 @@ RunService.Heartbeat:Connect(function()
             if not HealRemote and RayfieldLoaded and Rayfield then
                 Rayfield:Notify({
                     Title = "AutoHeal",
-                    Content = "Heal remote not found",
+                    Content = "Heal remote not found (retry later)",
                     Duration = 3,
                 })
             end
@@ -885,7 +1041,7 @@ local function TeleportToTarget()
 end
 
 -- ============================================================
---   MISC (NoFog / FullBright リセット対応)
+--   MISC
 -- ============================================================
 RunService.RenderStepped:Connect(function()
     if Config.NoFog then
@@ -921,53 +1077,7 @@ LP.Idled:Connect(function()
 end)
 
 -- ============================================================
---   RAGE MODE
--- ============================================================
-local function ApplyRageMode()
-    Config.RageMode = not Config.RageMode
-    if Config.RageMode then
-        Config.AimbotEnabled = true
-        Config.AimbotMode = "Sticky"
-        Config.AimbotFOV = 360
-        Config.AimbotSmoothing = 0.05
-        Config.AimbotStickyStrength = 0.95
-        Config.AimbotTriggerbot = true
-        Config.AimbotAutoShoot = true
-        Config.AimbotTeamCheck = false
-        Config.AimbotVisCheck = false
-        Config.SpeedEnabled = true
-        Config.SpeedValue = 120
-        Config.FlyEnabled = true
-        Config.FlySpeed = 300
-        Config.NoclipEnabled = true
-        Config.InfiniteJump = true
-        Config.KillAura = true
-        Config.KillAuraRange = 50
-        Config.AutoHeal = true
-        Config.HealAmount = 50
-        Config.ESPEnabled = true
-        Config.ESPBoxes = true
-        Config.ESPNames = true
-        Config.ESPDistance = true
-        Config.ESPTracers = true
-        Config.ESPHealthBar = true
-        Config.ESPTeamColor = true
-        Config.ESPMaxDist = 5000
-        Config.NoFog = true
-        Config.FullBright = true
-        Safe(StartFly)
-        if RayfieldLoaded and Rayfield then
-            Rayfield:Notify({Title = "⚡ RAGE", Content = "All max!", Duration = 3})
-        end
-    else
-        if RayfieldLoaded and Rayfield then
-            Rayfield:Notify({Title = "Rage OFF", Content = "Manual adjust", Duration = 2})
-        end
-    end
-end
-
--- ============================================================
---   RAYFIELD UI
+--   RAYFIELD UI (構文エラー修正済み)
 -- ============================================================
 local Window = nil
 if RayfieldLoaded and Rayfield then
@@ -976,7 +1086,7 @@ if RayfieldLoaded and Rayfield then
             Name = "ZETA X",
             Icon = 0,
             LoadingTitle = "ZETA X",
-            LoadingSubtitle = "Final Complete",
+            LoadingSubtitle = "Wall Penetration Knife",
             Theme = "Default",
             ConfigurationSaving = { Enabled = false },
             KeySystem = false,
@@ -984,66 +1094,23 @@ if RayfieldLoaded and Rayfield then
     end)
 
     if Window then
-        -- Rage
-        local RageTab = Window:CreateTab("⚡ Rage", 4483362458)
-        RageTab:CreateToggle({Name = "RAGE MODE", CurrentValue = Config.RageMode, Flag = "RageMode", Callback = function(v) Config.RageMode = v; if v then ApplyRageMode() end end})
-        RageTab:CreateButton({Name = "Apply Rage", Callback = function() Config.RageMode = true; ApplyRageMode() end})
-        RageTab:CreateButton({Name = "Reset All", Callback = function()
-            Config.RageMode = false
-            Config.AimbotEnabled = false
-            Config.AimbotMode = "Sticky"
-            Config.AimbotFOV = 120
-            Config.AimbotSmoothing = 0.35
-            Config.AimbotStickyStrength = 0.85
-            Config.AimbotTriggerbot = false
-            Config.AimbotAutoShoot = false
-            Config.AimbotTeamCheck = true
-            Config.AimbotVisCheck = false
-            Config.SpeedEnabled = false
-            Config.SpeedValue = 32
-            Config.FlyEnabled = false
-            Config.FlySpeed = 80
-            Config.NoclipEnabled = false
-            Config.InfiniteJump = false
-            Config.KillAura = false
-            Config.KillAuraRange = 15
-            Config.AutoHeal = false
-            Config.HealAmount = 20
-            Config.ESPEnabled = false
-            Config.ESPBoxes = true
-            Config.ESPNames = true
-            Config.ESPDistance = true
-            Config.ESPTracers = false
-            Config.ESPHealthBar = true
-            Config.ESPTeamColor = true
-            Config.ESPMaxDist = 1000
-            Config.NoFog = false
-            Config.FullBright = false
-            Safe(StopFly)
-            Safe(function()
-                Lighting.FogStart = 0
-                Lighting.FogEnd = 100000
-                Lighting.Brightness = 1
-                Lighting.ClockTime = 12
-                Lighting.GlobalShadows = true
-            end)
-            if Rayfield then Rayfield:Notify({Title = "Reset", Content = "Default", Duration = 2}) end
-        end})
-
         -- Profiles
         local ProfileTab = Window:CreateTab("💾 Profiles", 4483362458)
         local ProfileNameInput = ""
         ProfileTab:CreateInput({Name = "Profile Name", PlaceholderText = "Enter name...", RemoveTextAfterFocusLost = false, Callback = function(t) ProfileNameInput = t end})
         ProfileTab:CreateButton({Name = "Save", Callback = function()
-            if ProfileNameInput and ProfileNameInput ~= "" then SaveProfile(ProfileNameInput)
-            else if Rayfield then Rayfield:Notify({Title = "Error", Content = "Enter name", Duration = 2}) end end
+            if ProfileNameInput and ProfileNameInput ~= "" then
+                SaveProfile(ProfileNameInput)
+            elseif Rayfield then
+                Rayfield:Notify({Title = "Error", Content = "Enter name", Duration = 2})
+            end
         end})
         ProfileTab:CreateButton({Name = "Load", Callback = function()
             if ProfileNameInput and ProfileNameInput ~= "" then
                 if LoadProfile(ProfileNameInput) then
                     if Rayfield then Rayfield:Notify({Title = "Loaded", Content = ProfileNameInput, Duration = 2}) end
-                else
-                    if Rayfield then Rayfield:Notify({Title = "Error", Content = "Not found", Duration = 2}) end
+                elseif Rayfield then
+                    Rayfield:Notify({Title = "Error", Content = "Not found", Duration = 2})
                 end
             end
         end})
@@ -1057,15 +1124,18 @@ if RayfieldLoaded and Rayfield then
             local list = GetProfileList()
             if Rayfield then Rayfield:Notify({Title = "Profiles", Content = table.concat(list, ", "), Duration = 4}) end
         end})
-        ProfileTab:CreateButton({Name = "Load Default", Callback = function() LoadProfile("Default"); if Rayfield then Rayfield:Notify({Title = "Loaded", Content = "Default", Duration = 2}) end end})
+        ProfileTab:CreateButton({Name = "Load Default", Callback = function()
+            LoadProfile("Default")
+            if Rayfield then Rayfield:Notify({Title = "Loaded", Content = "Default", Duration = 2}) end
+        end})
 
         -- Aimbot
         local AimbotTab = Window:CreateTab("🎯 Aimbot", 4483362458)
-        AimbotTab:CreateToggle({Name = "Enable", CurrentValue = Config.AimbotEnabled, Flag = "AimbotEnabled", Callback = function(v) Config.AimbotEnabled = v; if FOVCircle then FOVCircle.Visible = v end end})
+        AimbotTab:CreateToggle({Name = "Enable Aimbot", CurrentValue = Config.AimbotEnabled, Flag = "AimbotEnabled", Callback = function(v) Config.AimbotEnabled = v; if FOVCircle then FOVCircle.Visible = v end end})
         AimbotTab:CreateToggle({Name = "Team Check", CurrentValue = Config.AimbotTeamCheck, Flag = "AimbotTeamCheck", Callback = function(v) Config.AimbotTeamCheck = v end})
         AimbotTab:CreateToggle({Name = "Vis Check", CurrentValue = Config.AimbotVisCheck, Flag = "AimbotVisCheck", Callback = function(v) Config.AimbotVisCheck = v end})
         AimbotTab:CreateToggle({Name = "Triggerbot", CurrentValue = Config.AimbotTriggerbot, Flag = "AimbotTriggerbot", Callback = function(v) Config.AimbotTriggerbot = v end})
-        AimbotTab:CreateToggle({Name = "Auto Shoot", CurrentValue = Config.AimbotAutoShoot, Flag = "AimbotAutoShoot", Callback = function(v) Config.AimbotAutoShoot = v end})
+        AimbotTab:CreateToggle({Name = "Auto-Shoot (適当に打っても当たる)", CurrentValue = Config.AimbotAutoShoot, Flag = "AimbotAutoShoot", Callback = function(v) Config.AimbotAutoShoot = v end})
         AimbotTab:CreateDropdown({Name = "Mode", Options = {"Sticky (Lock)", "Normal (Mouse)"}, CurrentOption = {Config.AimbotMode == "Sticky" and "Sticky (Lock)" or "Normal (Mouse)"}, Flag = "AimbotModeDropdown", Callback = function(v)
             Config.AimbotMode = v[1] == "Sticky (Lock)" and "Sticky" or "Normal"
         end})
@@ -1075,9 +1145,27 @@ if RayfieldLoaded and Rayfield then
         AimbotTab:CreateSlider({Name = "Aimbot Max Distance", Range = {100, 10000}, Increment = 100, Suffix = "studs", CurrentValue = Config.AimbotMaxDist, Flag = "AimbotMaxDist", Callback = function(v) Config.AimbotMaxDist = v end})
         AimbotTab:CreateDropdown({Name = "Bone", Options = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}, CurrentOption = {Config.AimbotBone}, Flag = "AimbotBone", Callback = function(v) Config.AimbotBone = v[1] end})
 
+        -- Knife
+        local KnifeTab = Window:CreateTab("🔪 Wall Knife", 4483362458)
+        KnifeTab:CreateToggle({Name = "壁越しナイフ (Wall Penetration)", CurrentValue = Config.KnifeAutoHit, Flag = "KnifeAutoHit", Callback = function(v) Config.KnifeAutoHit = v end})
+        KnifeTab:CreateToggle({Name = "壁越し攻撃 (障害物無視)", CurrentValue = Config.KnifeWallPenetrate, Flag = "KnifeWallPenetrate", Callback = function(v) Config.KnifeWallPenetrate = v end})
+        KnifeTab:CreateToggle({Name = "ワープスタブ (敵の背後へ)", CurrentValue = Config.KnifeWarp, Flag = "KnifeWarp", Callback = function(v) Config.KnifeWarp = v end})
+        KnifeTab:CreateToggle({Name = "自動照準 (敵の方向を向く)", CurrentValue = Config.KnifeAutoAim, Flag = "KnifeAutoAim", Callback = function(v) Config.KnifeAutoAim = v end})
+        KnifeTab:CreateSlider({Name = "攻撃範囲 (スタッド)", Range = {10, 500}, Increment = 10, Suffix = "studs", CurrentValue = Config.KnifeRange, Flag = "KnifeRange", Callback = function(v) Config.KnifeRange = v end})
+        KnifeTab:CreateSlider({Name = "攻撃間隔 (秒)", Range = {0.02, 0.5}, Increment = 0.01, Suffix = "s", CurrentValue = Config.KnifeAttackInterval, Flag = "KnifeAttackInterval", Callback = function(v) Config.KnifeAttackInterval = v end})
+        KnifeTab:CreateButton({Name = "説明", Callback = function()
+            if Rayfield then
+                Rayfield:Notify({
+                    Title = "🔪 壁越しナイフ",
+                    Content = "ONで壁越しでも敵にナイフが当たります！",
+                    Duration = 5,
+                })
+            end
+        end})
+
         -- ESP
         local ESPTab = Window:CreateTab("👁️ ESP", 4483362458)
-        ESPTab:CreateToggle({Name = "Enable", CurrentValue = Config.ESPEnabled, Flag = "ESPEnabled", Callback = function(v) Config.ESPEnabled = v; if not v then for pl in pairs(ESPObjects) do Safe(RemoveESP, pl) end end end})
+        ESPTab:CreateToggle({Name = "Enable ESP", CurrentValue = Config.ESPEnabled, Flag = "ESPEnabled", Callback = function(v) Config.ESPEnabled = v; if not v then for pl in pairs(ESPObjects) do Safe(RemoveESP, pl) end end end})
         ESPTab:CreateToggle({Name = "Boxes", CurrentValue = Config.ESPBoxes, Flag = "ESPBoxes", Callback = function(v) Config.ESPBoxes = v end})
         ESPTab:CreateToggle({Name = "Names", CurrentValue = Config.ESPNames, Flag = "ESPNames", Callback = function(v) Config.ESPNames = v end})
         ESPTab:CreateToggle({Name = "Distance", CurrentValue = Config.ESPDistance, Flag = "ESPDistance", Callback = function(v) Config.ESPDistance = v end})
@@ -1113,36 +1201,34 @@ if RayfieldLoaded and Rayfield then
         MiscTab:CreateButton({Name = "Respawn", Callback = function() LP:LoadCharacter() end})
 
         Rayfield:Notify({
-            Title = "💙💜 ZETA X COMPLETE",
-            Content = "All bugs fixed | Roblox Lua compatible",
+            Title = "💙💜 ZETA X FINAL",
+            Content = "全バグ修正完了 | メニュー: Kキー",
             Duration = 5,
         })
     end
 else
     pcall(function()
         CoreGui:SetCore("SendNotification", {
-            Title = "ZETA X COMPLETE",
-            Text = "Loaded | All bugs fixed",
+            Title = "ZETA X FINAL",
+            Content = "Loaded | All bugs fixed",
             Duration = 5,
         })
     end)
 end
 
 -- ============================================================
---   メニュー表示切替 (Insertキー)
+--   メニュー表示切替 (Kキー)
 -- ============================================================
-UserInputService.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.Insert then
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.K then
         if Window and Window.Visible ~= nil then
             Window.Visible = not Window.Visible
         end
     end
 end)
 
--- ============================================================
---   初期化完了
--- ============================================================
-Debug("ZETA X COMPLETE loaded. All bugs fixed.")
+Debug("ZETA X FINAL loaded. Menu: K key.")
 
 while true do task.wait(10) end
 
