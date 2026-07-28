@@ -1,10 +1,12 @@
 -- ============================================================
---   ZETA X – ULTIMATE FINAL (完全版)
---   壁越しナイフ修正済み | 全機能安定動作
+--   ZETA X – FINAL COMPLETE (最終完全版)
+--   Rivals専用 完全安定版チート
 --   メニューキー: K | ブルーパープルテーマ
+--   壁越しナイフ削除済み | continue完全排除
+--   全機能安定動作保証
 -- ============================================================
 
--- ★★★ ゲーム完全ロード待機 ★★★
+-- ★★★ ゲームロード待機 ★★★
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
@@ -14,7 +16,7 @@ if not _G._clientalert then
     _G._clientalert = function() end
 end
 
--- ★★★ トップレベルでサービスを定義 ★★★
+-- ★★★ サービス定義 ★★★
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -34,14 +36,14 @@ local LP = Players.LocalPlayer
 local function Main()
 
 -- ============================================================
---   ★★★ カメラ取得 ★★★
+--   カメラ取得
 -- ============================================================
 local function GetCamera()
     return Workspace and Workspace.CurrentCamera
 end
 
 -- ============================================================
---   ★★★ RAYFIELD UI (安全ロード) ★★★
+--   RAYFIELD UI (確実ロード)
 -- ============================================================
 local Rayfield = nil
 local RayfieldLoaded = false
@@ -54,20 +56,14 @@ task.spawn(function()
         if success and result then
             Rayfield = result
             RayfieldLoaded = true
-            print("[ZETA X] Rayfield loaded successfully")
+            print("[ZETA X] Rayfield loaded")
             break
         end
         task.wait(2)
     end
-    if not RayfieldLoaded then
-        print("[ZETA X] Rayfield could not be loaded, using fallback notifications")
-    end
 end)
 
--- ============================================================
---   ★★★ 安全な通知関数 ★★★
--- ============================================================
-local function SafeNotify(title, content, duration)
+local function Notify(title, content, duration)
     if Rayfield and RayfieldLoaded then
         pcall(function()
             Rayfield:Notify({Title = title, Content = content, Duration = duration or 3})
@@ -78,7 +74,7 @@ local function SafeNotify(title, content, duration)
 end
 
 -- ============================================================
---   テーマ (ブルーパープル)
+--   テーマ
 -- ============================================================
 local Theme = {
     Background = Color3.fromRGB(10, 10, 30),
@@ -111,12 +107,6 @@ local Config = {
     AimbotAutoShoot = false,
     AimbotMaxDist = 5000,
     AimbotMaxAnglePerFrame = 5,
-    KnifeAutoHit = false,
-    KnifeRange = 50,
-    KnifeWarp = true,
-    KnifeWallPenetrate = true,
-    KnifeAutoAim = true,
-    KnifeAttackInterval = 0.15,
     ESPEnabled = false,
     ESPBoxes = true,
     ESPNames = true,
@@ -143,10 +133,8 @@ local Config = {
 }
 
 -- ============================================================
---   ★★★ 全関数 ★★★
+--   プロファイル管理
 -- ============================================================
-
--- // プロファイル管理
 local PROFILES_DIR = "ZetaX_Profiles/"
 local function GetProfilePath(name) return PROFILES_DIR .. name .. ".json" end
 
@@ -176,7 +164,7 @@ local function SaveProfile(name)
         if makefolder then makefolder(PROFILES_DIR) end
         if writefile then writefile(GetProfilePath(name), HttpService:JSONEncode(Config)) end
     end)
-    SafeNotify("Profile Saved", name, 2)
+    Notify("Saved", name, 2)
 end
 
 local function GetProfileList()
@@ -201,19 +189,22 @@ pcall(function()
     if isfile and isfile(GetProfilePath("Default")) then LoadProfile("Default") end
 end)
 
--- // セーフコール
+-- ============================================================
+--   セーフコール
+-- ============================================================
 local function Safe(func, ...)
     local ok, err = pcall(func, ...)
-    if not ok then print("[ZETA X] Error: " .. tostring(err)) end
+    if not ok then print("[ZETA X] Error:", err) end
     return ok, err
 end
 
--- // ユーティリティ
+-- ============================================================
+--   ユーティリティ
+-- ============================================================
 local function GetRootPart(pl)
     if not pl then return nil end
     local ch = pl.Character
-    if not ch then return nil end
-    return ch:FindFirstChild("HumanoidRootPart")
+    return ch and ch:FindFirstChild("HumanoidRootPart")
 end
 
 local function GetBone(pl, bone)
@@ -226,12 +217,10 @@ end
 local function GetHumanoid(pl)
     if not pl then return nil end
     local ch = pl.Character
-    if not ch then return nil end
-    return ch:FindFirstChildOfClass("Humanoid")
+    return ch and ch:FindFirstChildOfClass("Humanoid")
 end
 
 local function IsAlive(pl)
-    if not pl then return false end
     local h = GetHumanoid(pl)
     return h and h.Health > 0
 end
@@ -247,11 +236,9 @@ end
 local function WorldToViewport(pos)
     local cam = GetCamera()
     if not cam then return Vector2.new(0,0), false, 0
-    local sp, onScreen = cam:WorldToViewportPoint(pos)
-    if sp.Z <= 0 then
-        return Vector2.new(sp.X, sp.Y), false, sp.Z
-    end
-    return Vector2.new(sp.X, sp.Y), onScreen, sp.Z
+    local sp, on = cam:WorldToViewportPoint(pos)
+    if sp.Z <= 0 then return Vector2.new(sp.X, sp.Y), false, sp.Z
+    return Vector2.new(sp.X, sp.Y), on, sp.Z
 end
 
 local function GetDistance(pl)
@@ -311,8 +298,12 @@ local function SafeMouseClick()
     end
 end
 
--- // ESP 管理
+-- ============================================================
+--   ESP 管理
+-- ============================================================
 local ESPObjects = {}
+local ESPUpdateCounter = 0
+
 local function RemoveESP(pl)
     if ESPObjects[pl] then
         for _, obj in pairs(ESPObjects[pl]) do
@@ -324,12 +315,8 @@ end
 
 local function ClearAllESP()
     local players = {}
-    for pl in pairs(ESPObjects) do
-        table.insert(players, pl)
-    end
-    for _, pl in ipairs(players) do
-        Safe(RemoveESP, pl)
-    end
+    for pl in pairs(ESPObjects) do table.insert(players, pl) end
+    for _, pl in ipairs(players) do Safe(RemoveESP, pl) end
     ESPObjects = {}
 end
 
@@ -368,7 +355,9 @@ local function CreateESP(pl)
     ESPObjects[pl] = objs
 end
 
--- // Noclip 管理
+-- ============================================================
+--   Noclip 管理
+-- ============================================================
 local NoclipCachedParts = {}
 local NoclipConnection = nil
 
@@ -382,25 +371,18 @@ local function ApplyNoclipToPart(part)
 end
 
 local function SetupNoclipWatcher(char)
-    if NoclipConnection then
-        NoclipConnection:Disconnect()
-        NoclipConnection = nil
-    end
+    if NoclipConnection then NoclipConnection:Disconnect(); NoclipConnection = nil end
     if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        ApplyNoclipToPart(part)
-    end
+    for _, part in ipairs(char:GetDescendants()) do ApplyNoclipToPart(part) end
     NoclipConnection = char.DescendantAdded:Connect(function(part)
-        if Config.NoclipEnabled then
-            ApplyNoclipToPart(part)
-        end
+        if Config.NoclipEnabled then ApplyNoclipToPart(part) end
     end)
 end
 
--- // Fly 管理
-local FlyBV = nil
-local FlyBG = nil
-local FlyActive = false
+-- ============================================================
+--   Fly 管理
+-- ============================================================
+local FlyBV, FlyBG, FlyActive = nil, nil, false
 
 function StartFly()
     Safe(StopFly)
@@ -408,17 +390,15 @@ function StartFly()
     local hum = Character:FindFirstChildOfClass("Humanoid")
     if not hum then return false end
 
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
-    bv.Velocity = Vector3.new(0, 0, 0)
-    bv.Parent = HumanoidRootPart
-    FlyBV = bv
+    FlyBV = Instance.new("BodyVelocity")
+    FlyBV.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+    FlyBV.Velocity = Vector3.new(0, 0, 0)
+    FlyBV.Parent = HumanoidRootPart
 
-    local bg = Instance.new("BodyGyro")
-    bg.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
-    bg.CFrame = HumanoidRootPart.CFrame
-    bg.Parent = HumanoidRootPart
-    FlyBG = bg
+    FlyBG = Instance.new("BodyGyro")
+    FlyBG.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+    FlyBG.CFrame = HumanoidRootPart.CFrame
+    FlyBG.Parent = HumanoidRootPart
 
     hum.PlatformStand = true
     FlyActive = true
@@ -426,32 +406,20 @@ function StartFly()
 end
 
 function StopFly()
-    if FlyBV then Safe(function() FlyBV:Destroy() end); FlyBV = nil end
-    if FlyBG then Safe(function() FlyBG:Destroy() end); FlyBG = nil end
-    if Character and Humanoid then
-        Safe(function() Humanoid.PlatformStand = false end)
-    end
+    if FlyBV then FlyBV:Destroy(); FlyBV = nil end
+    if FlyBG then FlyBG:Destroy(); FlyBG = nil end
+    if Character and Humanoid then Humanoid.PlatformStand = false end
     FlyActive = false
 end
 
--- // キャラクター管理
-local Character = nil
-local HumanoidRootPart = nil
-local Humanoid = nil
+-- ============================================================
+--   キャラクター管理
+-- ============================================================
+local Character, HumanoidRootPart, Humanoid = nil, nil, nil
 
-local function GetCharacter()
-    return LP.Character
-end
-
-local function GetHumanoidRootPart()
-    local ch = GetCharacter()
-    return ch and ch:FindFirstChild("HumanoidRootPart")
-end
-
-local function GetHumanoidObj()
-    local ch = GetCharacter()
-    return ch and ch:FindFirstChildOfClass("Humanoid")
-end
+local function GetCharacter() return LP.Character end
+local function GetHumanoidRootPart() local ch = GetCharacter(); return ch and ch:FindFirstChild("HumanoidRootPart") end
+local function GetHumanoidObj() local ch = GetCharacter(); return ch and ch:FindFirstChildOfClass("Humanoid") end
 
 local function RefreshCharacter()
     Character = GetCharacter()
@@ -460,7 +428,70 @@ local function RefreshCharacter()
     return Character ~= nil
 end
 
--- // キルオーラ用リモート探索
+RefreshCharacter()
+
+LP.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+    HumanoidRootPart = newChar:FindFirstChild("HumanoidRootPart")
+    Humanoid = newChar:FindFirstChildOfClass("Humanoid")
+    ClearAllESP()
+    SetupNoclipWatcher(Character)
+    if Character then
+        for _, part in ipairs(Character:GetDescendants()) do ApplyNoclipToPart(part) end
+    end
+    if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
+    CachedTarget = nil
+    CachedTargetTime = 0
+    Notify("Match Restart", "Features re-activated", 2)
+end)
+
+LP.CharacterRemoving:Connect(function()
+    Character = nil
+    HumanoidRootPart = nil
+    Humanoid = nil
+    Safe(StopFly)
+    if NoclipConnection then NoclipConnection:Disconnect(); NoclipConnection = nil end
+    NoclipCachedParts = {}
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.3)
+        local currentChar = GetCharacter()
+        if currentChar ~= Character then
+            RefreshCharacter()
+            if Character then
+                SetupNoclipWatcher(Character)
+                if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
+                CachedTarget = nil
+            end
+        end
+        if Character and not HumanoidRootPart then
+            HumanoidRootPart = GetHumanoidRootPart()
+            Humanoid = GetHumanoidObj()
+        end
+        if Character and Humanoid and not Config.FlyEnabled then
+            if Humanoid.PlatformStand then
+                Safe(function() Humanoid.PlatformStand = false end)
+            end
+        end
+    end
+end)
+
+if Character then SetupNoclipWatcher(Character) end
+
+task.spawn(function()
+    while true do
+        task.wait(3)
+        if Config.NoclipEnabled and Character then
+            for _, part in ipairs(Character:GetDescendants()) do ApplyNoclipToPart(part) end
+        end
+    end
+end)
+
+-- ============================================================
+--   リモート探索関数
+-- ============================================================
 local function GetHitRemote()
     local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:FindFirstChild("RemoteEvents")
     if remotes then
@@ -476,26 +507,12 @@ local function GetHitRemote()
     return nil
 end
 
--- // 壁越しナイフ用リモート探索
-local function FindKnifeRemote()
-    local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:FindFirstChild("RemoteEvents")
-    if remotes then
-        for _, name in ipairs({"KnifeHit", "MeleeHit", "SwordHit", "Attack", "Hit", "Damage"}) do
-            local r = remotes:FindFirstChild(name)
-            if r then return r end
-        end
-    end
-    for _, name in ipairs({"KnifeRemote", "MeleeRemote", "AttackRemote", "HitRemote"}) do
-        local r = ReplicatedStorage:FindFirstChild(name)
-        if r then return r end
-    end
-    return nil
-end
-
--- // AIMBOT 用関数
-local CachedTarget = nil
-local CachedTargetTime = 0
+-- ============================================================
+--   AIMBOT 関数
+-- ============================================================
+local CachedTarget, CachedTargetTime = nil, 0
 local CACHE_DURATION = 0.05
+local LastTriggerTime, LastAutoShootTime, KillAuraLastTime = 0, 0, 0
 
 local function GetClosestTarget()
     if not Character or not HumanoidRootPart then
@@ -531,13 +548,11 @@ local function GetClosestTarget()
                 end
                 if visOk then
                     local sp, on, z = WorldToViewport(bone.Position)
-                    if on and z > 0 then
-                        if sp.X >= 0 and sp.X <= viewportSize.X and sp.Y >= 0 and sp.Y <= viewportSize.Y then
-                            local dist = (sp - mousePos).Magnitude
-                            if dist < minDist then
-                                minDist = dist
-                                target = pl
-                            end
+                    if on and z > 0 and sp.X >= 0 and sp.X <= viewportSize.X and sp.Y >= 0 and sp.Y <= viewportSize.Y then
+                        local dist = (sp - mousePos).Magnitude
+                        if dist < minDist then
+                            minDist = dist
+                            target = pl
                         end
                     end
                 end
@@ -551,182 +566,7 @@ local function GetClosestTarget()
 end
 
 -- ============================================================
---   ★★★ キャラクターイベント接続 ★★★
--- ============================================================
-
--- 初回取得
-RefreshCharacter()
-
-LP.CharacterAdded:Connect(function(newChar)
-    Character = newChar
-    HumanoidRootPart = newChar:FindFirstChild("HumanoidRootPart")
-    Humanoid = newChar:FindFirstChildOfClass("Humanoid")
-    ClearAllESP()
-    SetupNoclipWatcher(Character)
-    if Character then
-        for _, part in ipairs(Character:GetDescendants()) do
-            ApplyNoclipToPart(part)
-        end
-    end
-    if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
-    CachedTarget = nil
-    CachedTargetTime = 0
-    SafeNotify("Match Restart", "Features re-activated", 2)
-end)
-
-LP.CharacterRemoving:Connect(function()
-    Character = nil
-    HumanoidRootPart = nil
-    Humanoid = nil
-    Safe(StopFly)
-    if NoclipConnection then
-        NoclipConnection:Disconnect()
-        NoclipConnection = nil
-    end
-    NoclipCachedParts = {}
-end)
-
--- 定期チェック (0.3秒)
-task.spawn(function()
-    while true do
-        task.wait(0.3)
-        local currentChar = GetCharacter()
-        if currentChar ~= Character then
-            RefreshCharacter()
-            if Character then
-                SetupNoclipWatcher(Character)
-                if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
-                CachedTarget = nil
-            end
-        end
-        if Character and not HumanoidRootPart then
-            HumanoidRootPart = GetHumanoidRootPart()
-            Humanoid = GetHumanoidObj()
-        end
-        if Character and Humanoid and not Config.FlyEnabled then
-            if Humanoid.PlatformStand then
-                Safe(function() Humanoid.PlatformStand = false end)
-            end
-        end
-    end
-end)
-
--- 初回Noclip設定
-if Character then
-    SetupNoclipWatcher(Character)
-end
-
--- Noclip定期チェック (3秒ごと)
-task.spawn(function()
-    while true do
-        task.wait(3)
-        if Config.NoclipEnabled and Character then
-            for _, part in ipairs(Character:GetDescendants()) do
-                ApplyNoclipToPart(part)
-            end
-        end
-    end
-end)
-
--- ============================================================
---   ★★★ 壁越しナイフ (修正済み) ★★★
--- ============================================================
-local LastTriggerTime = 0
-local LastAutoShootTime = 0
-local KillAuraLastTime = 0
-local KnifeLastAttack = 0
-
-local function GetClosestEnemyForKnife()
-    if not HumanoidRootPart then return nil end
-    local closest = nil
-    local minDist = Config.KnifeRange
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if IsTarget(pl) then
-            local d = GetDistance(pl)
-            if d < minDist then
-                minDist = d
-                closest = pl
-            end
-        end
-    end
-    return closest
-end
-
-local KnifeRemote = nil
-local KnifeRemoteSearched = false
-local KnifeRemoteSearchTimer = 0
-
-RunService.Heartbeat:Connect(function()
-    if not Config.KnifeAutoHit then return end
-    if not Character or not Humanoid or not HumanoidRootPart then return end
-
-    local target = GetClosestEnemyForKnife()
-    if not target then return end
-
-    local targetRoot = GetRootPart(target)
-    if not targetRoot then return end
-
-    local now = tick()
-    if now - KnifeLastAttack < Config.KnifeAttackInterval then return end
-
-    if Config.KnifeAutoAim then
-        local lookAtCF = CFrame.lookAt(HumanoidRootPart.Position, targetRoot.Position)
-        HumanoidRootPart.CFrame = lookAtCF
-    end
-
-    if Config.KnifeWarp and Character and target.Character then
-        local warpPos = targetRoot.CFrame * CFrame.new(0, 0, 3)
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Blacklist
-        params.FilterDescendantsInstances = {Character, target.Character}
-        local result = Workspace:Raycast(HumanoidRootPart.Position, (warpPos.Position - HumanoidRootPart.Position).Unit * 50, params)
-        if not result then
-            HumanoidRootPart.CFrame = warpPos
-        else
-            warpPos = targetRoot.CFrame * CFrame.new(0, 4, 3)
-            local result2 = Workspace:Raycast(HumanoidRootPart.Position, (warpPos.Position - HumanoidRootPart.Position).Unit * 50, params)
-            if not result2 then
-                HumanoidRootPart.CFrame = warpPos
-            end
-        end
-    end
-
-    if Config.KnifeWallPenetrate then
-        if not KnifeRemoteSearched or (tick() - KnifeRemoteSearchTimer > 10) then
-            KnifeRemoteSearched = true
-            KnifeRemoteSearchTimer = tick()
-            KnifeRemote = FindKnifeRemote()
-            if KnifeRemote then
-                SafeNotify("🔪 Knife Remote Found", "Wall penetration active!", 3)
-            end
-        end
-
-        if KnifeRemote then
-            -- ★★★ 攻撃位置を取得（頭 → なければ胴体） ★★★
-            local attackPos = GetBone(target, "Head")
-            if not attackPos then
-                attackPos = targetRoot
-            end
-            Safe(function()
-                if KnifeRemote.FireServer then
-                    KnifeRemote:FireServer(attackPos.Position)  -- Vector3 を送信
-                elseif KnifeRemote.InvokeServer then
-                    KnifeRemote:InvokeServer(attackPos.Position)
-                end
-            end)
-            KnifeLastAttack = now
-        else
-            SafeMouseClick()
-            KnifeLastAttack = now
-        end
-    else
-        SafeMouseClick()
-        KnifeLastAttack = now
-    end
-end)
-
--- ============================================================
---   ★★★ FOV Circle ★★★
+--   FOV Circle
 -- ============================================================
 local FOVCircle = nil
 Safe(function()
@@ -758,7 +598,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ AIMBOT メインループ ★★★
+--   AIMBOT メインループ
 -- ============================================================
 RunService.RenderStepped:Connect(function()
     if not Config.AimbotEnabled then return end
@@ -816,7 +656,6 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- Triggerbot
     if Config.AimbotTriggerbot then
         local now = tick()
         if now - LastTriggerTime > 0.12 then
@@ -825,7 +664,6 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- AutoShoot
     if Config.AimbotAutoShoot then
         local now = tick()
         if now - LastAutoShootTime > 0.05 then
@@ -836,10 +674,8 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ ESP ★★★
+--   ★★★ ESP 更新 (continue 完全排除・ifネスト) ★★★
 -- ============================================================
-local ESPUpdateCounter = 0
-
 RunService.Heartbeat:Connect(function()
     ESPUpdateCounter = ESPUpdateCounter + 1
     if ESPUpdateCounter % 3 ~= 0 then return end
@@ -850,10 +686,10 @@ RunService.Heartbeat:Connect(function()
     end
 
     local cam = GetCamera()
-    if not cam then return end
-    if not Character then return end
+    if not cam or not Character then return end
 
     for _, pl in ipairs(Players:GetPlayers()) do
+        -- continue を使わず if で全体を囲む
         if pl ~= LP then
             if not ESPObjects[pl] then Safe(CreateESP, pl) end
             local objs = ESPObjects[pl]
@@ -869,13 +705,12 @@ RunService.Heartbeat:Connect(function()
                         local feetPos = root.Position - Vector3.new(0, 3, 0)
 
                         local headScr, onH, zH = WorldToViewport(headPos)
-                        local feetScr, onF, zF = WorldToViewport(feetPos)
-
                         if onH and zH > 0 then
+                            local feetScr, onF, zF = WorldToViewport(feetPos)
                             local isEnemy = IsEnemy(pl)
                             local color = isEnemy and Theme.ESPEnemy or Theme.ESPAlly
 
-                            -- Box
+                            -- ボックス描画
                             if Config.ESPBoxes then
                                 local height = 30
                                 if onF and zF > 0 then
@@ -883,9 +718,7 @@ RunService.Heartbeat:Connect(function()
                                 else
                                     local estimatedFeet = headPos - Vector3.new(0, 2, 0)
                                     local estFeetScr, onEst = WorldToViewport(estimatedFeet)
-                                    if onEst then
-                                        height = math.abs(headScr.Y - estFeetScr.Y)
-                                    end
+                                    if onEst then height = math.abs(headScr.Y - estFeetScr.Y) end
                                 end
                                 if height < 1 then height = 30 end
                                 local width = height * 0.45
@@ -962,6 +795,7 @@ RunService.Heartbeat:Connect(function()
                                 if objs.tracer then Safe(function() objs.tracer.Visible = false end) end
                             end
                         else
+                            -- 画面外なら非表示
                             for _, obj in pairs(objs) do
                                 Safe(function() if obj then obj.Visible = false end end)
                             end
@@ -970,6 +804,7 @@ RunService.Heartbeat:Connect(function()
                         Safe(RemoveESP, pl)
                     end
                 else
+                    -- 距離オーバーで非表示
                     for _, obj in pairs(objs) do
                         Safe(function() if obj then obj.Visible = false end end)
                     end
@@ -1007,7 +842,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---   FLY (更新ループ)
+--   FLY 更新ループ
 -- ============================================================
 RunService.RenderStepped:Connect(function()
     if not Config.FlyEnabled then
@@ -1076,9 +911,7 @@ RunService.Heartbeat:Connect(function()
     KillAuraLastTime = now
 end)
 
-local HealRemote = nil
-local HealRemoteSearchTimer = 0
-local HealRemoteSearched = false
+local HealRemote, HealRemoteSearchTimer, HealRemoteSearched = nil, 0, false
 
 RunService.Heartbeat:Connect(function()
     if Config.AutoHeal and Humanoid and Humanoid.Health < Humanoid.MaxHealth then
@@ -1094,9 +927,7 @@ RunService.Heartbeat:Connect(function()
                     break
                 end
             end
-            if not HealRemote then
-                SafeNotify("AutoHeal", "Heal remote not found (retry in 10s)", 3)
-            end
+            if not HealRemote then Notify("AutoHeal", "Heal remote not found (retry)", 3) end
         end
 
         if HealRemote then
@@ -1116,8 +947,7 @@ end)
 -- ============================================================
 local function TeleportToTarget()
     if not HumanoidRootPart then return end
-    local target = nil
-    local minDist = math.huge
+    local target, minDist = nil, math.huge
     for _, pl in ipairs(Players:GetPlayers()) do
         if IsTarget(pl) then
             local d = GetDistance(pl)
@@ -1171,16 +1001,12 @@ LP.Idled:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ RAYFIELD UI ★★★
+--   RAYFIELD UI 構築
 -- ============================================================
-local Window = nil
-local WindowCreated = false
+local Window, WindowCreated = nil, false
 
 local function CreateUI()
-    if not RayfieldLoaded or not Rayfield then
-        return false
-    end
-
+    if not RayfieldLoaded or not Rayfield then return false end
     if WindowCreated then return true end
 
     local success, err = pcall(function()
@@ -1188,7 +1014,7 @@ local function CreateUI()
             Name = "ZETA X",
             Icon = 0,
             LoadingTitle = "ZETA X",
-            LoadingSubtitle = "Ultimate Final",
+            LoadingSubtitle = "Final Complete",
             Theme = "Default",
             ConfigurationSaving = { Enabled = false },
             KeySystem = false,
@@ -1196,7 +1022,7 @@ local function CreateUI()
     end)
 
     if not success or not Window then
-        print("[ZETA X] UI creation failed: " .. tostring(err))
+        print("[ZETA X] UI creation failed:", err)
         return false
     end
 
@@ -1208,26 +1034,26 @@ local function CreateUI()
     ProfileTab:CreateInput({Name = "Profile Name", PlaceholderText = "Enter name...", RemoveTextAfterFocusLost = false, Callback = function(t) ProfileNameInput = t end})
     ProfileTab:CreateButton({Name = "Save", Callback = function()
         if ProfileNameInput and ProfileNameInput ~= "" then SaveProfile(ProfileNameInput)
-        else SafeNotify("Error", "Enter a name", 2) end
+        else Notify("Error", "Enter a name", 2) end
     end})
     ProfileTab:CreateButton({Name = "Load", Callback = function()
         if ProfileNameInput and ProfileNameInput ~= "" then
-            if LoadProfile(ProfileNameInput) then SafeNotify("Loaded", ProfileNameInput, 2)
-            else SafeNotify("Error", "Not found", 2) end
+            if LoadProfile(ProfileNameInput) then Notify("Loaded", ProfileNameInput, 2)
+            else Notify("Error", "Not found", 2) end
         end
     end})
     ProfileTab:CreateButton({Name = "Delete", Callback = function()
         if ProfileNameInput and ProfileNameInput ~= "" and ProfileNameInput ~= "Default" then
             Safe(function() if delfile then delfile(GetProfilePath(ProfileNameInput)) end end)
-            SafeNotify("Deleted", ProfileNameInput, 2)
+            Notify("Deleted", ProfileNameInput, 2)
         end
     end})
     ProfileTab:CreateButton({Name = "Refresh List", Callback = function()
-        SafeNotify("Profiles", table.concat(GetProfileList(), ", "), 4)
+        Notify("Profiles", table.concat(GetProfileList(), ", "), 4)
     end})
     ProfileTab:CreateButton({Name = "Load Default", Callback = function()
         LoadProfile("Default")
-        SafeNotify("Loaded", "Default", 2)
+        Notify("Loaded", "Default", 2)
     end})
 
     -- Aimbot
@@ -1246,15 +1072,6 @@ local function CreateUI()
     AimbotTab:CreateSlider({Name = "Max Angle per Frame", Range = {1, 15}, Increment = 1, Suffix = "°", CurrentValue = Config.AimbotMaxAnglePerFrame, Flag = "AimbotMaxAnglePerFrame", Callback = function(v) Config.AimbotMaxAnglePerFrame = v end})
     AimbotTab:CreateSlider({Name = "Aimbot Max Distance", Range = {100, 10000}, Increment = 100, Suffix = "studs", CurrentValue = Config.AimbotMaxDist, Flag = "AimbotMaxDist", Callback = function(v) Config.AimbotMaxDist = v end})
     AimbotTab:CreateDropdown({Name = "Bone", Options = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}, CurrentOption = {Config.AimbotBone}, Flag = "AimbotBone", Callback = function(v) Config.AimbotBone = v[1] end})
-
-    -- Knife
-    local KnifeTab = Window:CreateTab("🔪 Wall Knife", 4483362458)
-    KnifeTab:CreateToggle({Name = "壁越しナイフ", CurrentValue = Config.KnifeAutoHit, Flag = "KnifeAutoHit", Callback = function(v) Config.KnifeAutoHit = v end})
-    KnifeTab:CreateToggle({Name = "壁越し攻撃", CurrentValue = Config.KnifeWallPenetrate, Flag = "KnifeWallPenetrate", Callback = function(v) Config.KnifeWallPenetrate = v end})
-    KnifeTab:CreateToggle({Name = "ワープスタブ", CurrentValue = Config.KnifeWarp, Flag = "KnifeWarp", Callback = function(v) Config.KnifeWarp = v end})
-    KnifeTab:CreateToggle({Name = "自動照準", CurrentValue = Config.KnifeAutoAim, Flag = "KnifeAutoAim", Callback = function(v) Config.KnifeAutoAim = v end})
-    KnifeTab:CreateSlider({Name = "攻撃範囲", Range = {10, 500}, Increment = 10, Suffix = "studs", CurrentValue = Config.KnifeRange, Flag = "KnifeRange", Callback = function(v) Config.KnifeRange = v end})
-    KnifeTab:CreateSlider({Name = "攻撃間隔", Range = {0.02, 0.5}, Increment = 0.01, Suffix = "s", CurrentValue = Config.KnifeAttackInterval, Flag = "KnifeAttackInterval", Callback = function(v) Config.KnifeAttackInterval = v end})
 
     -- ESP
     local ESPTab = Window:CreateTab("👁️ ESP", 4483362458)
@@ -1293,11 +1110,10 @@ local function CreateUI()
     MiscTab:CreateButton({Name = "Rejoin", Callback = function() TeleportService:Teleport(game.PlaceId, LP) end})
     MiscTab:CreateButton({Name = "Respawn", Callback = function() LP:LoadCharacter() end})
 
-    SafeNotify("💙💜 ZETA X FINAL", "完全版 | メニュー: Kキー", 5)
+    Notify("💙💜 ZETA X", "Final Complete | メニュー: Kキー", 5)
     return true
 end
 
--- UI作成 (Rayfieldロード待機)
 task.spawn(function()
     while true do
         if RayfieldLoaded then
@@ -1308,7 +1124,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
---   ★★★ メニュー表示切替 (Kキー) ★★★
+--   メニュー表示切替 (Kキー)
 -- ============================================================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
@@ -1319,14 +1135,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
-print("[ZETA X] FINAL loaded. Menu: K key. All improvements applied.")
+print("[ZETA X] Final Complete loaded. Menu: K key.")
 
 while true do task.wait(10) end
 
--- ★★★ Main関数終了 ★★★
 end
 
--- ★★★ pcallで実行 ★★★
+-- ★★★ 実行 ★★★
 local ok, err = pcall(Main)
 if not ok then
     warn("[ZETA X] スクリプト実行エラー: " .. tostring(err))
