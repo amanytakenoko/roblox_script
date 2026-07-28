@@ -159,7 +159,7 @@ end
 
 local function WorldToViewport(pos)
     local cam = GetCamera()
-    if not cam then return Vector2.new(0,0), false
+    if not cam then return Vector2.new(0,0), false end
     local sp, on = cam:WorldToViewportPoint(pos)
     if sp.Z <= 0 then return Vector2.new(sp.X, sp.Y), false
     return Vector2.new(sp.X, sp.Y), on
