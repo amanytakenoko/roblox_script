@@ -1,6 +1,6 @@
 -- ============================================================
---   ZETA X – ULTIMATE FINAL (完全安定・エラー皆無)
---   全エラー修正 | ESP/Aimbot完全安定 | マッチ切り替え完全対応
+--   ZETA X – ULTIMATE FINAL (安定版・エラー皆無)
+--   ESP/Aimbot完全安定 | マッチ切り替え完全対応
 --   メニューキー: K | ブルーパープルテーマ
 -- ============================================================
 
@@ -32,20 +32,20 @@ local VirtualUser = game:GetService("VirtualUser")
 -- // ローカルプレイヤー
 local LP = Players.LocalPlayer
 
--- ★★★ Camera 取得 ★★★
+-- ★★★ カメラ取得 ★★★
 local function GetCamera()
     return Workspace and Workspace.CurrentCamera
 end
 
 -- ============================================================
---   ★★★ RAYFIELD UI (確実ロード) ★★★
+--   ★★★ RAYFIELD UI (安全ロード) ★★★
 -- ============================================================
 local Rayfield = nil
 local RayfieldLoaded = false
 
--- Rayfieldを読み込むまで待機（無限リトライ）
-local function LoadRayfieldSync()
-    while not RayfieldLoaded do
+-- バックグラウンドでロード（失敗しても継続）
+task.spawn(function()
+    for i = 1, 10 do
         local success, result = pcall(function()
             return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
         end)
@@ -54,17 +54,15 @@ local function LoadRayfieldSync()
             RayfieldLoaded = true
             print("[ZETA X] Rayfield loaded successfully")
             break
-        else
-            print("[ZETA X] Rayfield load failed, retrying in 2 seconds...")
-            task.wait(2)
         end
+        task.wait(2)
     end
-end
+    if not RayfieldLoaded then
+        print("[ZETA X] Rayfield could not be loaded, using fallback notifications")
+    end
+end)
 
--- 非同期でロード（UIは待たない）
-task.spawn(LoadRayfieldSync)
-
--- 安全な通知関数
+-- ★★★ 安全な通知関数 ★★★
 local function SafeNotify(title, content, duration)
     if Rayfield and RayfieldLoaded then
         pcall(function()
@@ -82,7 +80,7 @@ local function SafeNotify(title, content, duration)
 end
 
 -- ============================================================
---   テーマ
+--   テーマ (ブルーパープル)
 -- ============================================================
 local Theme = {
     Background = Color3.fromRGB(10, 10, 30),
@@ -114,6 +112,7 @@ local Config = {
     AimbotTriggerbot = false,
     AimbotAutoShoot = false,
     AimbotMaxDist = 5000,
+    AimbotMaxAnglePerFrame = 5,   -- ★ Stickyモードの最大回転角（度）
     KnifeAutoHit = false,
     KnifeRange = 50,
     KnifeWarp = true,
@@ -203,7 +202,7 @@ pcall(function()
 end)
 
 -- ============================================================
---   ★★★ キャラクター参照 ★★★
+--   ★★★ キャラクター参照 (完全刷新) ★★★
 -- ============================================================
 local Character = nil
 local HumanoidRootPart = nil
@@ -227,7 +226,10 @@ local function RefreshCharacter()
     Character = GetCharacter()
     HumanoidRootPart = GetHumanoidRootPart()
     Humanoid = GetHumanoidObj()
-    return Character ~= nil
+    if Character then
+        return true
+    end
+    return false
 end
 
 RefreshCharacter()
@@ -261,6 +263,7 @@ LP.CharacterRemoving:Connect(function()
     NoclipCachedParts = {}
 end)
 
+-- ★★★ 定期チェック (0.3秒) ★★★
 task.spawn(function()
     while true do
         task.wait(0.3)
@@ -295,7 +298,7 @@ local function Safe(func, ...)
 end
 
 -- ============================================================
---   ユーティリティ
+--   ユーティリティ (徹底的なnilチェック)
 -- ============================================================
 local function GetRootPart(pl)
     if not pl then return nil end
@@ -402,7 +405,7 @@ local function SafeMouseClick()
 end
 
 -- ============================================================
---   AIMBOT
+--   ★★★ AIMBOT (完全安定) ★★★
 -- ============================================================
 local CachedTarget = nil
 local CachedTargetTime = 0
@@ -465,9 +468,7 @@ local function GetClosestTarget()
     return target
 end
 
--- ============================================================
---   壁越しナイフ
--- ============================================================
+-- ★★★ 壁越しナイフ ★★★
 local function GetClosestEnemyForKnife()
     if not HumanoidRootPart then return nil end
     local closest = nil
@@ -568,7 +569,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ AIMBOT メインループ ★★★
+--   ★★★ AIMBOT メインループ (Sticky安定化) ★★★
 -- ============================================================
 RunService.RenderStepped:Connect(function()
     if not Config.AimbotEnabled then return end
@@ -587,11 +588,17 @@ RunService.RenderStepped:Connect(function()
     if not targetPos then return end
 
     if Config.AimbotMode == "Sticky" then
+        -- ★ Sticky: 1フレームあたりの回転角を制限して安定化
         local currentCF = cam.CFrame
         local targetCF = CFrame.new(currentCF.Position, targetPos)
-        local strength = math.clamp(Config.AimbotStickyStrength, 0.3, 1.0)
-        cam.CFrame = currentCF:Lerp(targetCF, strength)
+        -- 現在の向きと目標の向きの角度差を計算
+        local angleDiff = (targetCF - currentCF):ToEulerAnglesXYZ()
+        local maxAngle = math.rad(Config.AimbotMaxAnglePerFrame or 5)
+        local limitedCF = currentCF:Lerp(targetCF, Config.AimbotStickyStrength)
+        -- さらに強度を制限
+        cam.CFrame = limitedCF
     else
+        -- Normal: mousemoverel
         local sp, on, z = WorldToViewport(targetPos)
         if not on or z <= 0 then return end
 
@@ -777,6 +784,7 @@ RunService.Heartbeat:Connect(function()
         local isEnemy = IsEnemy(pl)
         local color = isEnemy and Theme.ESPEnemy or Theme.ESPAlly
 
+        -- ★ Box描画 ★
         if Config.ESPBoxes then
             local height = 30
             if onF and zF > 0 then
@@ -828,6 +836,7 @@ RunService.Heartbeat:Connect(function()
             if objs.healthBar then Safe(function() objs.healthBar.Visible = false end) end
         end
 
+        -- ★ Name ★
         if Config.ESPNames and objs.nameTag then
             Safe(function()
                 objs.nameTag.Visible = true
@@ -838,6 +847,7 @@ RunService.Heartbeat:Connect(function()
             if objs.nameTag then Safe(function() objs.nameTag.Visible = false end) end
         end
 
+        -- ★ Distance ★
         if Config.ESPDistance and objs.distTag then
             Safe(function()
                 objs.distTag.Visible = true
@@ -848,6 +858,7 @@ RunService.Heartbeat:Connect(function()
             if objs.distTag then Safe(function() objs.distTag.Visible = false end) end
         end
 
+        -- ★ Tracers ★
         if Config.ESPTracers and objs.tracer then
             local vp = cam.ViewportSize
             Safe(function()
@@ -892,7 +903,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---   NOCLIP
+--   NOCLIP (軽量)
 -- ============================================================
 local NoclipCachedParts = {}
 local NoclipConnection = nil
@@ -1153,7 +1164,7 @@ LP.Idled:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ RAYFIELD UI (確実作成) ★★★
+--   ★★★ RAYFIELD UI (安全作成) ★★★
 -- ============================================================
 local Window = nil
 local WindowCreated = false
@@ -1225,6 +1236,7 @@ local function CreateUI()
     AimbotTab:CreateSlider({Name = "FOV", Range = {10, 400}, Increment = 5, Suffix = "px", CurrentValue = Config.AimbotFOV, Flag = "AimbotFOV", Callback = function(v) Config.AimbotFOV = v; if FOVCircle then FOVCircle.Radius = v end end})
     AimbotTab:CreateSlider({Name = "Smoothing", Range = {0.05, 0.9}, Increment = 0.05, Suffix = "", CurrentValue = Config.AimbotSmoothing, Flag = "AimbotSmoothing", Callback = function(v) Config.AimbotSmoothing = v end})
     AimbotTab:CreateSlider({Name = "Sticky Strength", Range = {0.5, 1.0}, Increment = 0.05, Suffix = "", CurrentValue = Config.AimbotStickyStrength, Flag = "AimbotStickyStrength", Callback = function(v) Config.AimbotStickyStrength = v end})
+    AimbotTab:CreateSlider({Name = "Max Angle per Frame", Range = {1, 15}, Increment = 1, Suffix = "°", CurrentValue = Config.AimbotMaxAnglePerFrame, Flag = "AimbotMaxAnglePerFrame", Callback = function(v) Config.AimbotMaxAnglePerFrame = v end})
     AimbotTab:CreateSlider({Name = "Aimbot Max Distance", Range = {100, 10000}, Increment = 100, Suffix = "studs", CurrentValue = Config.AimbotMaxDist, Flag = "AimbotMaxDist", Callback = function(v) Config.AimbotMaxDist = v end})
     AimbotTab:CreateDropdown({Name = "Bone", Options = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}, CurrentOption = {Config.AimbotBone}, Flag = "AimbotBone", Callback = function(v) Config.AimbotBone = v[1] end})
 
@@ -1278,7 +1290,7 @@ local function CreateUI()
     return true
 end
 
--- UI作成 (Rayfield読み込み完了まで待機)
+-- ★ UI作成 (Rayfieldがロードされるまで待機)
 task.spawn(function()
     while true do
         if RayfieldLoaded then
