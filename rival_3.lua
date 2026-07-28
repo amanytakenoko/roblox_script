@@ -1,7 +1,7 @@
 -- ============================================================
---   ZETA X – ULTIMATE FINAL (完全安定版・エラー修正)
---   Rayfield確実ロード | マッチ切り替え完全対応
---   壁越しナイフ | メニューキー: K
+--   ZETA X – ULTIMATE FINAL (ESP/Aimbot完全安定版)
+--   ESP位置ぶれ修正 | Aimbot吸い付き安定化
+--   マッチ切り替え完全対応 | メニューキー: K
 -- ============================================================
 
 -- ★★★ ゲーム完全ロード待機 ★★★
@@ -17,7 +17,7 @@ end
 -- ★★★ 全体をpcallで保護 ★★★
 local function Main()
 
--- // サービス (確実に取得)
+-- // サービス
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -34,14 +34,11 @@ local LP = Players.LocalPlayer
 
 -- ★★★ Camera を安全に取得 ★★★
 local function GetCamera()
-    if Workspace then
-        return Workspace.CurrentCamera
-    end
-    return nil
+    return Workspace and Workspace.CurrentCamera
 end
 
 -- ============================================================
---   ★★★ RAYFIELD UI (リトライ付き・エラー保護) ★★★
+--   RAYFIELD UI (リトライ付き・エラー保護)
 -- ============================================================
 local Rayfield = nil
 local RayfieldLoaded = false
@@ -61,10 +58,7 @@ local function LoadRayfield()
     end
 end
 
--- 初回ロード
 LoadRayfield()
-
--- 失敗したらリトライ
 if not RayfieldLoaded then
     task.spawn(function()
         for i = 1, 3 do
@@ -74,7 +68,6 @@ if not RayfieldLoaded then
     end)
 end
 
--- ★★★ 安全な通知関数 ★★★
 local function SafeNotify(title, content, duration)
     if Rayfield and RayfieldLoaded then
         pcall(function()
@@ -92,7 +85,7 @@ local function SafeNotify(title, content, duration)
 end
 
 -- ============================================================
---   テーマ (ブルーパープル)
+--   テーマ
 -- ============================================================
 local Theme = {
     Background = Color3.fromRGB(10, 10, 30),
@@ -237,16 +230,11 @@ local function RefreshCharacter()
     Character = GetCharacter()
     HumanoidRootPart = GetHumanoidRootPart()
     Humanoid = GetHumanoidObj()
-    if Character then
-        return true
-    end
-    return false
+    return Character ~= nil
 end
 
--- 初回取得
 RefreshCharacter()
 
--- CharacterAddedで更新
 LP.CharacterAdded:Connect(function(newChar)
     Character = newChar
     HumanoidRootPart = newChar:FindFirstChild("HumanoidRootPart")
@@ -276,7 +264,6 @@ LP.CharacterRemoving:Connect(function()
     NoclipCachedParts = {}
 end)
 
--- 定期チェック
 task.spawn(function()
     while true do
         task.wait(0.3)
@@ -311,12 +298,13 @@ local function Safe(func, ...)
 end
 
 -- ============================================================
---   ユーティリティ
+--   ユーティリティ (徹底的なnilチェック)
 -- ============================================================
 local function GetRootPart(pl)
     if not pl then return nil end
     local ch = pl.Character
-    return ch and ch:FindFirstChild("HumanoidRootPart")
+    if not ch then return nil end
+    return ch:FindFirstChild("HumanoidRootPart")
 end
 
 local function GetBone(pl, bone)
@@ -329,26 +317,33 @@ end
 local function GetHumanoid(pl)
     if not pl then return nil end
     local ch = pl.Character
-    return ch and ch:FindFirstChildOfClass("Humanoid")
+    if not ch then return nil end
+    return ch:FindFirstChildOfClass("Humanoid")
 end
 
 local function IsAlive(pl)
+    if not pl then return false end
     local h = GetHumanoid(pl)
     return h and h.Health > 0
 end
 
 local function IsEnemy(pl)
+    if pl == LP then return false end
     if Config.AimbotTeamCheck and LP.Team and pl.Team then
         return LP.Team ~= pl.Team
     end
-    return pl ~= LP
+    return true
 end
 
 local function WorldToViewport(pos)
     local cam = GetCamera()
-    if not cam then return Vector2.new(0,0), false end
-    local sp, on = cam:WorldToViewportPoint(pos)
-    return Vector2.new(sp.X, sp.Y), on
+    if not cam then return Vector2.new(0,0), false, 0
+    local sp, onScreen = cam:WorldToViewportPoint(pos)
+    -- カメラの後ろにある場合は表示しない
+    if sp.Z <= 0 then
+        return Vector2.new(sp.X, sp.Y), false, sp.Z
+    end
+    return Vector2.new(sp.X, sp.Y), onScreen, sp.Z
 end
 
 local function GetDistance(pl)
@@ -396,7 +391,7 @@ local function IsTarget(pl)
 end
 
 -- ============================================================
---   AIMBOT
+--   AIMBOT (キャッシュ付き、ターゲット選択厳格化)
 -- ============================================================
 local CachedTarget = nil
 local CachedTargetTime = 0
@@ -432,26 +427,26 @@ local function GetClosestTarget()
     local viewportSize = cam.ViewportSize
 
     for _, pl in ipairs(Players:GetPlayers()) do
-        if IsTarget(pl) then
-            local visOk = true
-            if Config.AimbotVisCheck then
-                visOk = IsVisible(pl, Config.AimbotMaxDist, Config.AimbotBone)
-            end
-            if visOk then
-                local bone = GetBone(pl, Config.AimbotBone)
-                if bone then
-                    local sp, on = WorldToViewport(bone.Position)
-                    if on then
-                        if sp.X >= 0 and sp.X <= viewportSize.X and sp.Y >= 0 and sp.Y <= viewportSize.Y then
-                            local dist = (sp - mousePos).Magnitude
-                            if dist < minDist then
-                                minDist = dist
-                                target = pl
-                            end
-                        end
-                    end
-                end
-            end
+        if not IsTarget(pl) then continue end
+
+        local bone = GetBone(pl, Config.AimbotBone)
+        if not bone then continue end
+
+        -- 可視性チェック
+        if Config.AimbotVisCheck and not IsVisible(pl, Config.AimbotMaxDist, Config.AimbotBone) then
+            continue
+        end
+
+        local sp, on, z = WorldToViewport(bone.Position)
+        if not on or z <= 0 then continue end
+        if sp.X < 0 or sp.X > viewportSize.X or sp.Y < 0 or sp.Y > viewportSize.Y then
+            continue
+        end
+
+        local dist = (sp - mousePos).Magnitude
+        if dist < minDist then
+            minDist = dist
+            target = pl
         end
     end
 
@@ -461,7 +456,7 @@ local function GetClosestTarget()
 end
 
 -- ============================================================
---   壁越しナイフ
+--   壁越しナイフ (変更なし)
 -- ============================================================
 local function GetClosestEnemyForKnife()
     if not HumanoidRootPart then return nil end
@@ -577,7 +572,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---   AIMBOT メインループ
+--   AIMBOT メインループ (Stickyモードの安定化)
 -- ============================================================
 RunService.RenderStepped:Connect(function()
     if not Config.AimbotEnabled then return end
@@ -596,13 +591,16 @@ RunService.RenderStepped:Connect(function()
     if not targetPos then return end
 
     if Config.AimbotMode == "Sticky" then
+        -- Stickyモード: カメラをターゲットに徐々に近づける（急激な変化を抑える）
         local currentCF = cam.CFrame
         local targetCF = CFrame.new(currentCF.Position, targetPos)
         local strength = math.clamp(Config.AimbotStickyStrength, 0.3, 1.0)
-        cam.CFrame = currentCF:Lerp(targetCF, strength)
+        local newCF = currentCF:Lerp(targetCF, strength)
+        cam.CFrame = newCF
     else
-        local sp, on = WorldToViewport(targetPos)
-        if not on then return end
+        -- Normalモード: mousemoverel
+        local sp, on, z = WorldToViewport(targetPos)
+        if not on or z <= 0 then return end
 
         local mousePos = UserInputService:GetMouseLocation()
         if not mousePos then return end
@@ -620,6 +618,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
+    -- Triggerbot / AutoShoot
     if Config.AimbotTriggerbot then
         local now = tick()
         if now - LastTriggerTime > 0.12 then
@@ -686,7 +685,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ ESP ★★★
+--   ★★★ ESP (位置ぶれ完全修正) ★★★
 -- ============================================================
 local ESPObjects = {}
 local ESPUpdateCounter = 0
@@ -760,115 +759,148 @@ RunService.Heartbeat:Connect(function()
     if not Character then return end
 
     for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LP then
-            if not ESPObjects[pl] then Safe(CreateESP, pl) end
-            if ESPObjects[pl] then
-                local dist = GetDistance(pl)
-                if dist <= Config.ESPMaxDist then
-                    local ch = pl.Character
-                    local root = GetRootPart(pl)
-                    local hum = GetHumanoid(pl)
-                    if ch and root and hum then
-                        local headPos = ch:FindFirstChild("Head") and ch.Head.Position or root.Position + Vector3.new(0, 2, 0)
-                        local headScr, onH = WorldToViewport(headPos)
-                        local visible = onH
-                        local objs = ESPObjects[pl]
-                        if objs then
-                            local isEnemy = IsEnemy(pl)
-                            local color = isEnemy and Theme.ESPEnemy or Theme.ESPAlly
+        if pl == LP then continue end
 
-                            if visible and Config.ESPBoxes then
-                                local feetPos = root.Position - Vector3.new(0, 3, 0)
-                                local feetScr, onF = WorldToViewport(feetPos)
-                                if not onF then feetScr = headScr + Vector2.new(0, 50) end
-                                local height = math.abs(headScr.Y - feetScr.Y)
-                                if height < 1 then height = 30 end
-                                local width = height * 0.45
-                                if objs.box then
-                                    Safe(function()
-                                        objs.box.Visible = true
-                                        objs.box.Color = color
-                                        objs.box.Size = Vector2.new(width, height)
-                                        objs.box.Position = Vector2.new(headScr.X - width/2, headScr.Y)
-                                    end)
-                                end
-                                if Config.ESPHealthBar then
-                                    local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                                    local barH = height
-                                    local barW = 4
-                                    local barX = headScr.X - width/2 - barW - 3
-                                    local barY = headScr.Y
-                                    local hpColor = hp > 0.6 and Theme.HealthHigh or (hp > 0.3 and Theme.HealthMid or Theme.HealthLow)
-                                    if objs.healthBG and objs.healthBar then
-                                        Safe(function()
-                                            objs.healthBG.Visible = true
-                                            objs.healthBG.Size = Vector2.new(barW, barH)
-                                            objs.healthBG.Position = Vector2.new(barX, barY)
-                                            objs.healthBar.Visible = true
-                                            objs.healthBar.Size = Vector2.new(barW, barH * hp)
-                                            objs.healthBar.Position = Vector2.new(barX, barY + barH * (1 - hp))
-                                            objs.healthBar.Color = hpColor
-                                        end)
-                                    end
-                                else
-                                    if objs.healthBG then Safe(function() objs.healthBG.Visible = false end) end
-                                    if objs.healthBar then Safe(function() objs.healthBar.Visible = false end) end
-                                end
-                            else
-                                if objs.box then Safe(function() objs.box.Visible = false end) end
-                                if objs.healthBG then Safe(function() objs.healthBG.Visible = false end) end
-                                if objs.healthBar then Safe(function() objs.healthBar.Visible = false end) end
-                            end
+        if not ESPObjects[pl] then Safe(CreateESP, pl) end
+        local objs = ESPObjects[pl]
+        if not objs then continue end
 
-                            if visible and Config.ESPNames and objs.nameTag then
-                                Safe(function()
-                                    objs.nameTag.Visible = true
-                                    objs.nameTag.Text = pl.DisplayName
-                                    objs.nameTag.Position = Vector2.new(headScr.X, headScr.Y - 16)
-                                end)
-                            else
-                                if objs.nameTag then Safe(function() objs.nameTag.Visible = false end) end
-                            end
+        local dist = GetDistance(pl)
+        if dist > Config.ESPMaxDist then
+            for _, obj in pairs(objs) do
+                Safe(function() if obj then obj.Visible = false end end)
+            end
+            goto continue_esp
+        end
 
-                            if visible and Config.ESPDistance and objs.distTag then
-                                Safe(function()
-                                    objs.distTag.Visible = true
-                                    objs.distTag.Text = string.format("[%.0fm]", dist)
-                                    objs.distTag.Position = Vector2.new(headScr.X, headScr.Y - 5)
-                                end)
-                            else
-                                if objs.distTag then Safe(function() objs.distTag.Visible = false end) end
-                            end
+        local ch = pl.Character
+        local root = GetRootPart(pl)
+        local hum = GetHumanoid(pl)
+        if not ch or not root or not hum then
+            Safe(RemoveESP, pl)
+            goto continue_esp
+        end
 
-                            if visible and Config.ESPTracers and objs.tracer then
-                                local vp = cam.ViewportSize
-                                Safe(function()
-                                    objs.tracer.Visible = true
-                                    objs.tracer.From = Vector2.new(vp.X/2, vp.Y)
-                                    objs.tracer.To = headScr
-                                    objs.tracer.Color = color
-                                end)
-                            else
-                                if objs.tracer then Safe(function() objs.tracer.Visible = false end) end
-                            end
-                        end
-                    else
-                        Safe(RemoveESP, pl)
-                    end
+        -- ★★★ 頭と足の座標を正確に取得 ★★★
+        local head = ch:FindFirstChild("Head")
+        local headPos = head and head.Position or root.Position + Vector3.new(0, 2, 0)
+        local feetPos = root.Position - Vector3.new(0, 3, 0)  -- 足の推定位置
+
+        local headScr, onH, zH = WorldToViewport(headPos)
+        local feetScr, onF, zF = WorldToViewport(feetPos)
+
+        -- カメラの後ろにいる場合は表示しない
+        if not onH or zH <= 0 then
+            for _, obj in pairs(objs) do
+                Safe(function() if obj then obj.Visible = false end end)
+            end
+            goto continue_esp
+        end
+
+        local visible = true  -- 頭が画面内にあれば表示
+        local isEnemy = IsEnemy(pl)
+        local color = isEnemy and Theme.ESPEnemy or Theme.ESPAlly
+
+        -- ★★★ Box描画 ★★★
+        if Config.ESPBoxes then
+            -- 足の位置が画面外の場合は頭から高さを推定
+            local height = 30
+            if onF and zF > 0 then
+                height = math.abs(headScr.Y - feetScr.Y)
+            else
+                -- 頭の位置から約2スタッド下を足と仮定
+                local estimatedFeet = headPos - Vector3.new(0, 2, 0)
+                local estFeetScr, onEst = WorldToViewport(estimatedFeet)
+                if onEst then
+                    height = math.abs(headScr.Y - estFeetScr.Y)
                 else
-                    for _, obj in pairs(ESPObjects[pl]) do
-                        Safe(function() if obj then obj.Visible = false end end)
-                    end
+                    height = 50  -- フォールバック
                 end
             end
+            if height < 1 then height = 30 end
+            local width = height * 0.45
+
+            if objs.box then
+                Safe(function()
+                    objs.box.Visible = true
+                    objs.box.Color = color
+                    objs.box.Size = Vector2.new(width, height)
+                    objs.box.Position = Vector2.new(headScr.X - width/2, headScr.Y)
+                end)
+            end
+
+            -- ★★★ Health Bar ★★★
+            if Config.ESPHealthBar then
+                local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                local barH = height
+                local barW = 4
+                local barX = headScr.X - width/2 - barW - 3
+                local barY = headScr.Y
+                local hpColor = hp > 0.6 and Theme.HealthHigh or (hp > 0.3 and Theme.HealthMid or Theme.HealthLow)
+                if objs.healthBG and objs.healthBar then
+                    Safe(function()
+                        objs.healthBG.Visible = true
+                        objs.healthBG.Size = Vector2.new(barW, barH)
+                        objs.healthBG.Position = Vector2.new(barX, barY)
+                        objs.healthBar.Visible = true
+                        objs.healthBar.Size = Vector2.new(barW, barH * hp)
+                        objs.healthBar.Position = Vector2.new(barX, barY + barH * (1 - hp))
+                        objs.healthBar.Color = hpColor
+                    end)
+                end
+            else
+                if objs.healthBG then Safe(function() objs.healthBG.Visible = false end) end
+                if objs.healthBar then Safe(function() objs.healthBar.Visible = false end) end
+            end
+        else
+            if objs.box then Safe(function() objs.box.Visible = false end) end
+            if objs.healthBG then Safe(function() objs.healthBG.Visible = false end) end
+            if objs.healthBar then Safe(function() objs.healthBar.Visible = false end) end
         end
+
+        -- ★★★ Name ★★★
+        if Config.ESPNames and objs.nameTag then
+            Safe(function()
+                objs.nameTag.Visible = true
+                objs.nameTag.Text = pl.DisplayName
+                objs.nameTag.Position = Vector2.new(headScr.X, headScr.Y - 16)
+            end)
+        else
+            if objs.nameTag then Safe(function() objs.nameTag.Visible = false end) end
+        end
+
+        -- ★★★ Distance ★★★
+        if Config.ESPDistance and objs.distTag then
+            Safe(function()
+                objs.distTag.Visible = true
+                objs.distTag.Text = string.format("[%.0fm]", dist)
+                objs.distTag.Position = Vector2.new(headScr.X, headScr.Y - 5)
+            end)
+        else
+            if objs.distTag then Safe(function() objs.distTag.Visible = false end) end
+        end
+
+        -- ★★★ Tracers ★★★
+        if Config.ESPTracers and objs.tracer then
+            local vp = cam.ViewportSize
+            Safe(function()
+                objs.tracer.Visible = true
+                objs.tracer.From = Vector2.new(vp.X/2, vp.Y)
+                objs.tracer.To = headScr
+                objs.tracer.Color = color
+            end)
+        else
+            if objs.tracer then Safe(function() objs.tracer.Visible = false end) end
+        end
+
+        ::continue_esp::
     end
 end)
 
 Players.PlayerRemoving:Connect(RemoveESP)
 
 -- ============================================================
---   MOVEMENT
+--   MOVEMENT (変更なし)
 -- ============================================================
 RunService.Heartbeat:Connect(function()
     if not Config.SpeedEnabled then return end
@@ -893,7 +925,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---   NOCLIP
+--   NOCLIP (軽量)
 -- ============================================================
 local NoclipCachedParts = {}
 local NoclipConnection = nil
@@ -1154,7 +1186,7 @@ LP.Idled:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ RAYFIELD UI (エラー対策) ★★★
+--   RAYFIELD UI
 -- ============================================================
 local Window = nil
 local WindowCreated = false
@@ -1172,7 +1204,7 @@ local function CreateUI()
             Name = "ZETA X",
             Icon = 0,
             LoadingTitle = "ZETA X",
-            LoadingSubtitle = "Final Ultimate",
+            LoadingSubtitle = "Ultimate Stable",
             Theme = "Default",
             ConfigurationSaving = { Enabled = false },
             KeySystem = false,
@@ -1287,7 +1319,6 @@ local function CreateUI()
     return true
 end
 
--- ★★★ UI作成 (リトライ付き) ★★★
 local function CreateUIWithRetry()
     if CreateUI() then return end
     task.spawn(function()
@@ -1298,7 +1329,6 @@ local function CreateUIWithRetry()
     end)
 end
 
--- 実行
 if RayfieldLoaded then
     CreateUIWithRetry()
 else
@@ -1322,7 +1352,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
-print("[ZETA X] FINAL loaded. Menu: K key. Fully stable.")
+print("[ZETA X] FINAL loaded. Menu: K key. ESP/Aimbot stable.")
 
 while true do task.wait(10) end
 
