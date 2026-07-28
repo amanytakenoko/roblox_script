@@ -1,7 +1,7 @@
 -- ============================================================
---   ZETA X – ULTIMATE FINAL (全バグ修正・完結版)
---   マッチ切り替え完全対応 | 壁越しナイフ | メニューキー: K
---   Roblox Lua完全対応 | Rivals専用
+--   ZETA X – ULTIMATE FINAL (完全安定版)
+--   Rayfield確実ロード | マッチ切り替え完全対応
+--   壁越しナイフ | メニューキー: K
 -- ============================================================
 
 -- ★★★ ゲーム完全ロード待機 ★★★
@@ -31,22 +31,46 @@ local VirtualUser = game:GetService("VirtualUser")
 
 -- // ローカルプレイヤー
 local LP = Players.LocalPlayer
-local Camera = Workspace.CurrentCamera
+
+-- ★★★ Camera を毎フレーム取得するように変更 ★★★
+local function GetCamera()
+    return Workspace.CurrentCamera
+end
 
 -- ============================================================
---   デバッグ
--- ============================================================
-local function Debug(msg) end
-
--- ============================================================
---   RAYFIELD UI
+--   ★★★ RAYFIELD UI (リトライ付き) ★★★
 -- ============================================================
 local Rayfield = nil
 local RayfieldLoaded = false
-pcall(function()
-    Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-    if Rayfield then RayfieldLoaded = true end
-end)
+local RayfieldRetryCount = 0
+
+local function LoadRayfield()
+    local success, result = pcall(function()
+        return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+    end)
+    if success and result then
+        Rayfield = result
+        RayfieldLoaded = true
+        print("[ZETA X] Rayfield loaded successfully")
+        return true
+    else
+        print("[ZETA X] Rayfield load failed: " .. tostring(result))
+        return false
+    end
+end
+
+-- 初回ロード
+LoadRayfield()
+
+-- 失敗したら3秒後にリトライ
+if not RayfieldLoaded then
+    task.spawn(function()
+        for i = 1, 3 do
+            task.wait(3)
+            if LoadRayfield() then break end
+        end
+    end)
+end
 
 -- ============================================================
 --   テーマ (ブルーパープル)
@@ -70,7 +94,6 @@ local Theme = {
 --   設定
 -- ============================================================
 local Config = {
-    -- Aimbot
     AimbotEnabled = false,
     AimbotMode = "Sticky",
     AimbotFOV = 120,
@@ -82,16 +105,12 @@ local Config = {
     AimbotTriggerbot = false,
     AimbotAutoShoot = false,
     AimbotMaxDist = 5000,
-
-    -- Knife
     KnifeAutoHit = false,
     KnifeRange = 50,
     KnifeWarp = true,
     KnifeWallPenetrate = true,
     KnifeAutoAim = true,
     KnifeAttackInterval = 0.15,
-
-    -- ESP
     ESPEnabled = false,
     ESPBoxes = true,
     ESPNames = true,
@@ -100,8 +119,6 @@ local Config = {
     ESPHealthBar = true,
     ESPTeamColor = true,
     ESPMaxDist = 1000,
-
-    -- Movement
     SpeedEnabled = false,
     SpeedValue = 32,
     FlyEnabled = false,
@@ -109,14 +126,10 @@ local Config = {
     NoclipEnabled = false,
     InfiniteJump = false,
     BunnyHop = false,
-
-    -- Combat
     KillAura = false,
     KillAuraRange = 15,
     AutoHeal = false,
     HealAmount = 20,
-
-    -- Misc
     AntiAFK = true,
     NoFog = false,
     FullBright = false,
@@ -183,99 +196,102 @@ pcall(function()
 end)
 
 -- ============================================================
---   ★★★ キャラクター参照 (マッチ切り替え完全対応) ★★★
+--   ★★★ キャラクター参照 (完全再取得) ★★★
 -- ============================================================
 local Character = nil
 local HumanoidRootPart = nil
 local Humanoid = nil
 
-local function ResetCharacterReferences()
-    Character = nil
-    HumanoidRootPart = nil
-    Humanoid = nil
-    -- ESP全削除
-    ClearAllESP()
-    -- キャッシュクリア
-    CachedTarget = nil
-    CachedTargetTime = 0
-    NoclipCachedParts = {}
-    -- Fly停止
-    Safe(StopFly)
-    Debug("Character references reset")
+local function GetCharacter()
+    return LP.Character
 end
 
-local function UpdateCharacter()
-    local newChar = LP.Character
-    if newChar and newChar ~= Character then
-        ResetCharacterReferences()
-        Character = newChar
-        HumanoidRootPart = newChar:FindFirstChild("HumanoidRootPart")
-        Humanoid = newChar:FindFirstChildOfClass("Humanoid")
-        SetupNoclipWatcher(Character)
-        if Config.FlyEnabled and HumanoidRootPart then
-            Safe(StartFly)
-        end
-        -- Noclip初回適用
-        if Character then
-            for _, part in ipairs(Character:GetDescendants()) do
-                ApplyNoclipToPart(part)
-            end
-        end
-        Debug("Character updated")
+local function GetHumanoidRootPart()
+    local ch = GetCharacter()
+    return ch and ch:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetHumanoidObj()
+    local ch = GetCharacter()
+    return ch and ch:FindFirstChildOfClass("Humanoid")
+end
+
+local function RefreshCharacter()
+    Character = GetCharacter()
+    HumanoidRootPart = GetHumanoidRootPart()
+    Humanoid = GetHumanoidObj()
+    if Character then
+        Debug("Character refreshed: " .. tostring(Character))
         return true
     end
     return false
 end
 
 -- 初回取得
-UpdateCharacter()
+RefreshCharacter()
 
--- ★★★ CharacterAdded: 一元管理 (ClearAllESP含む) ★★★
+-- CharacterAddedで更新
 LP.CharacterAdded:Connect(function(newChar)
-    Debug("CharacterAdded event fired")
-    ResetCharacterReferences()
+    Debug("CharacterAdded event")
     Character = newChar
     HumanoidRootPart = newChar:FindFirstChild("HumanoidRootPart")
     Humanoid = newChar:FindFirstChildOfClass("Humanoid")
+    -- ESPクリア
+    ClearAllESP()
+    -- Noclip再設定
     SetupNoclipWatcher(Character)
-    if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
-    -- Noclip初回適用
+    -- 初回Noclip適用
     if Character then
         for _, part in ipairs(Character:GetDescendants()) do
             ApplyNoclipToPart(part)
         end
     end
+    -- Fly再起動
+    if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
+    -- キャッシュクリア
+    CachedTarget = nil
+    CachedTargetTime = 0
     if RayfieldLoaded and Rayfield then
         Rayfield:Notify({Title = "Match Restart", Content = "All features re-activated", Duration = 2})
     end
-    Debug("CharacterAdded: new character set")
 end)
 
 LP.CharacterRemoving:Connect(function()
-    Debug("CharacterRemoving event fired")
-    ResetCharacterReferences()
+    Debug("CharacterRemoving event")
+    Character = nil
+    HumanoidRootPart = nil
+    Humanoid = nil
+    Safe(StopFly)
     if NoclipConnection then
         NoclipConnection:Disconnect()
         NoclipConnection = nil
     end
+    NoclipCachedParts = {}
 end)
 
--- ★★★ 定期チェック (0.5秒) ★★★
+-- ★★★ 定期チェック (0.3秒ごと、より頻繁に) ★★★
 task.spawn(function()
     while true do
-        task.wait(0.5)
-        local currentChar = LP.Character
+        task.wait(0.3)
+        local currentChar = GetCharacter()
         if currentChar ~= Character then
-            Debug("Periodic check: character changed, updating")
-            UpdateCharacter()
-        end
-        if Character and not HumanoidRootPart then
-            HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-            Humanoid = Character:FindFirstChildOfClass("Humanoid")
-            if HumanoidRootPart and Humanoid then
-                Debug("Periodic check: recovered root/humanoid")
+            Debug("Periodic: character changed")
+            RefreshCharacter()
+            if Character then
+                SetupNoclipWatcher(Character)
+                if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
+                CachedTarget = nil
             end
         end
+        -- HumanoidRootPartがnilの場合の再取得
+        if Character and not HumanoidRootPart then
+            HumanoidRootPart = GetHumanoidRootPart()
+            Humanoid = GetHumanoidObj()
+            if HumanoidRootPart and Humanoid then
+                Debug("Periodic: recovered root/humanoid")
+            end
+        end
+        -- Fly PlatformStand解除漏れ防止
         if Character and Humanoid and not Config.FlyEnabled then
             if Humanoid.PlatformStand then
                 Safe(function() Humanoid.PlatformStand = false end)
@@ -294,7 +310,7 @@ local function Safe(func, ...)
 end
 
 -- ============================================================
---   ユーティリティ
+--   ユーティリティ (常に最新の参照を取得)
 -- ============================================================
 local function GetRootPart(pl)
     if not pl then return nil end
@@ -328,8 +344,9 @@ local function IsEnemy(pl)
 end
 
 local function WorldToViewport(pos)
-    if not Camera then return Vector2.new(0,0), false end
-    local sp, on = Camera:WorldToViewportPoint(pos)
+    local cam = GetCamera()
+    if not cam then return Vector2.new(0,0), false end
+    local sp, on = cam:WorldToViewportPoint(pos)
     return Vector2.new(sp.X, sp.Y), on
 end
 
@@ -343,10 +360,11 @@ local function GetDistance(pl)
 end
 
 local function IsVisible(pl, maxDist, boneName)
-    if not Camera then return false end
+    local cam = GetCamera()
+    if not cam then return false end
     local bone = GetBone(pl, boneName or Config.AimbotBone)
     if not bone then return false end
-    local startPos = Camera.CFrame.Position
+    local startPos = cam.CFrame.Position
     local dir = (bone.Position - startPos)
     local dist = dir.Magnitude
     local limit = maxDist or Config.ESPMaxDist
@@ -389,10 +407,14 @@ local KillAuraLastTime = 0
 local KnifeLastAttack = 0
 
 local function GetClosestTarget()
+    -- キャラクターが無効ならキャッシュクリア
     if not Character or not HumanoidRootPart then
         CachedTarget = nil
         return nil
     end
+
+    local cam = GetCamera()
+    if not cam then return nil end
 
     local now = tick()
     if CachedTarget and (now - CachedTargetTime) < CACHE_DURATION then
@@ -403,12 +425,11 @@ local function GetClosestTarget()
         end
     end
 
-    if not Camera then return nil end
     local mousePos = UserInputService:GetMouseLocation()
     if not mousePos then return nil end
     local minDist = Config.AimbotFOV
     local target = nil
-    local viewportSize = Camera.ViewportSize
+    local viewportSize = cam.ViewportSize
 
     for _, pl in ipairs(Players:GetPlayers()) do
         if IsTarget(pl) then
@@ -440,7 +461,7 @@ local function GetClosestTarget()
 end
 
 -- ============================================================
---   ★★★ 壁越しナイフ (リモート再検索修正) ★★★
+--   ★★★ 壁越しナイフ ★★★
 -- ============================================================
 local function GetClosestEnemyForKnife()
     if not HumanoidRootPart then return nil end
@@ -495,7 +516,6 @@ RunService.Heartbeat:Connect(function()
         HumanoidRootPart.CFrame = lookAtCF
     end
 
-    -- ★★★ ワープスタブ (ガード追加) ★★★
     if Config.KnifeWarp and Character and target.Character then
         local warpPos = targetRoot.CFrame * CFrame.new(0, 0, 3)
         local params = RaycastParams.new()
@@ -513,23 +533,16 @@ RunService.Heartbeat:Connect(function()
         end
     end
 
-    -- ★★★ 壁越し攻撃 (再検索タイマー確実更新) ★★★
     if Config.KnifeWallPenetrate then
         if not KnifeRemoteSearched or (tick() - KnifeRemoteSearchTimer > 10) then
             KnifeRemoteSearched = true
-            KnifeRemoteSearchTimer = tick()  -- ★ 必ず更新 ★
+            KnifeRemoteSearchTimer = tick()
             KnifeRemote = FindKnifeRemote()
             if KnifeRemote and RayfieldLoaded and Rayfield then
                 Rayfield:Notify({
                     Title = "🔪 Knife Remote Found",
                     Content = "Wall penetration active!",
                     Duration = 3,
-                })
-            elseif not KnifeRemote and RayfieldLoaded and Rayfield then
-                Rayfield:Notify({
-                    Title = "🔪 Knife Remote",
-                    Content = "Not found, retrying in 10s",
-                    Duration = 2,
                 })
             end
         end
@@ -568,11 +581,14 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---   AIMBOT メインループ
+--   ★★★ AIMBOT メインループ (Camera再取得対応) ★★★
 -- ============================================================
 RunService.RenderStepped:Connect(function()
     if not Config.AimbotEnabled then return end
-    if not Character or not HumanoidRootPart or not Camera then return end
+    if not Character or not HumanoidRootPart then return end
+
+    local cam = GetCamera()
+    if not cam then return end
 
     local target = GetClosestTarget()
     if not target then return end
@@ -584,10 +600,10 @@ RunService.RenderStepped:Connect(function()
     if not targetPos then return end
 
     if Config.AimbotMode == "Sticky" then
-        local currentCF = Camera.CFrame
+        local currentCF = cam.CFrame
         local targetCF = CFrame.new(currentCF.Position, targetPos)
         local strength = math.clamp(Config.AimbotStickyStrength, 0.3, 1.0)
-        Camera.CFrame = currentCF:Lerp(targetCF, strength)
+        cam.CFrame = currentCF:Lerp(targetCF, strength)
     else
         local sp, on = WorldToViewport(targetPos)
         if not on then return end
@@ -642,7 +658,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   FOV Circle
+--   ★★★ FOV Circle (Camera再取得) ★★★
 -- ============================================================
 local FOVCircle = nil
 Safe(function()
@@ -674,7 +690,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ ESP (ClearAllESP 安全化) ★★★
+--   ★★★ ESP (Camera再取得 + Characterチェック強化) ★★★
 -- ============================================================
 local ESPObjects = {}
 local ESPUpdateCounter = 0
@@ -689,7 +705,6 @@ local function RemoveESP(pl)
 end
 
 local function ClearAllESP()
-    -- ★ コピーを作成して安全にループ ★
     local players = {}
     for pl in pairs(ESPObjects) do
         table.insert(players, pl)
@@ -745,7 +760,8 @@ RunService.Heartbeat:Connect(function()
         return
     end
 
-    if not Camera then return end
+    local cam = GetCamera()
+    if not cam then return end
     if not Character then return end
 
     for _, pl in ipairs(Players:GetPlayers()) do
@@ -830,7 +846,7 @@ RunService.Heartbeat:Connect(function()
                             end
 
                             if visible and Config.ESPTracers and objs.tracer then
-                                local vp = Camera.ViewportSize
+                                local vp = cam.ViewportSize
                                 Safe(function()
                                     objs.tracer.Visible = true
                                     objs.tracer.From = Vector2.new(vp.X/2, vp.Y)
@@ -857,7 +873,7 @@ end)
 Players.PlayerRemoving:Connect(RemoveESP)
 
 -- ============================================================
---   MOVEMENT
+--   MOVEMENT (Character再取得対応)
 -- ============================================================
 RunService.Heartbeat:Connect(function()
     if not Config.SpeedEnabled then return end
@@ -882,7 +898,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ NOCLIP (GetDescendants ループ削除・軽量化) ★★★
+--   ★★★ NOCLIP (軽量化) ★★★
 -- ============================================================
 local NoclipCachedParts = {}
 local NoclipConnection = nil
@@ -902,11 +918,9 @@ local function SetupNoclipWatcher(char)
         NoclipConnection = nil
     end
     if not char then return end
-    -- 初回全パーツに適用
     for _, part in ipairs(char:GetDescendants()) do
         ApplyNoclipToPart(part)
     end
-    -- 新規追加パーツを監視
     NoclipConnection = char.DescendantAdded:Connect(function(part)
         if Config.NoclipEnabled then
             ApplyNoclipToPart(part)
@@ -919,28 +933,20 @@ if Character then
     SetupNoclipWatcher(Character)
 end
 
--- ★ Steppedループ削除（DescendantAddedで十分カバー） ★
--- 代わりにNoclip有効時のみ既存パーツを再チェックする簡易処理を残す（任意）
-RunService.Heartbeat:Connect(function()
-    if not Config.NoclipEnabled then
-        -- Noclipが切れたらキャッシュクリア（次回有効時に再適用）
-        NoclipCachedParts = {}
-        return
+-- 簡易チェック (Noclip有効時のみ既存パーツを再確認、負荷軽減のため3秒ごと)
+task.spawn(function()
+    while true do
+        task.wait(3)
+        if Config.NoclipEnabled and Character then
+            for _, part in ipairs(Character:GetDescendants()) do
+                ApplyNoclipToPart(part)
+            end
+        end
     end
-    -- Noclip有効時に新しく追加されたパーツはDescendantAddedでカバーされるため、
-    -- 既存パーツの状態がリセットされることは稀なので、ここでは何もしない。
-    -- 万が一のために軽量チェックを入れる場合:
-    -- if Character then
-    --     for _, part in ipairs(Character:GetDescendants()) do
-    --         if part:IsA("BasePart") and part.CanCollide then
-    --             ApplyNoclipToPart(part)
-    --         end
-    --     end
-    -- end
 end)
 
 -- ============================================================
---   FLY
+--   FLY (Character再取得対応)
 -- ============================================================
 local FlyBV = nil
 local FlyBG = nil
@@ -988,7 +994,8 @@ RunService.RenderStepped:Connect(function()
     end
 
     if not Character or not HumanoidRootPart then
-        if not UpdateCharacter() then return end
+        RefreshCharacter()
+        if not Character or not HumanoidRootPart then return end
     end
 
     if (not FlyBV or not FlyBV.Parent) and HumanoidRootPart then
@@ -998,8 +1005,11 @@ RunService.RenderStepped:Connect(function()
 
     if not HumanoidRootPart or not FlyBV or not FlyBG then return end
 
+    local cam = GetCamera()
+    if not cam then return end
+
     local move = Vector3.new()
-    local cf = Camera.CFrame
+    local cf = cam.CFrame
     if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cf.LookVector * Vector3.new(1,0,1) end
     if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - cf.LookVector * Vector3.new(1,0,1) end
     if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cf.RightVector end
@@ -1018,7 +1028,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   COMBAT (オートヒール再検索修正)
+--   COMBAT
 -- ============================================================
 local function GetHitRemote()
     local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:FindFirstChild("RemoteEvents")
@@ -1056,7 +1066,6 @@ RunService.Heartbeat:Connect(function()
     KillAuraLastTime = now
 end)
 
--- ★★★ オートヒール (再検索タイマー確実更新) ★★★
 local HealRemote = nil
 local HealRemoteSearchTimer = 0
 local HealRemoteSearched = false
@@ -1066,7 +1075,7 @@ RunService.Heartbeat:Connect(function()
         local now = tick()
         if not HealRemoteSearched or (now - HealRemoteSearchTimer > 10) then
             HealRemoteSearched = true
-            HealRemoteSearchTimer = now  -- ★ 必ず更新 ★
+            HealRemoteSearchTimer = now
             local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
             for _, name in ipairs({"Heal", "HealPlayer", "SetHealth", "Health"}) do
                 local r = remotes:FindFirstChild(name)
@@ -1156,11 +1165,16 @@ LP.Idled:Connect(function()
 end)
 
 -- ============================================================
---   RAYFIELD UI
+--   ★★★ RAYFIELD UI (確実に動作するように) ★★★
 -- ============================================================
 local Window = nil
-if RayfieldLoaded and Rayfield then
-    Safe(function()
+local function CreateUI()
+    if not RayfieldLoaded or not Rayfield then
+        print("[ZETA X] Rayfield not loaded, skipping UI")
+        return false
+    end
+
+    local success, err = pcall(function()
         Window = Rayfield:CreateWindow({
             Name = "ZETA X",
             Icon = 0,
@@ -1172,133 +1186,156 @@ if RayfieldLoaded and Rayfield then
         })
     end)
 
-    if Window then
-        -- Profiles
-        local ProfileTab = Window:CreateTab("💾 Profiles", 4483362458)
-        local ProfileNameInput = ""
-        ProfileTab:CreateInput({Name = "Profile Name", PlaceholderText = "Enter name...", RemoveTextAfterFocusLost = false, Callback = function(t) ProfileNameInput = t end})
-        ProfileTab:CreateButton({Name = "Save", Callback = function()
-            if ProfileNameInput and ProfileNameInput ~= "" then
-                SaveProfile(ProfileNameInput)
-            elseif Rayfield then
-                Rayfield:Notify({Title = "Error", Content = "Enter name", Duration = 2})
-            end
-        end})
-        ProfileTab:CreateButton({Name = "Load", Callback = function()
-            if ProfileNameInput and ProfileNameInput ~= "" then
-                if LoadProfile(ProfileNameInput) then
-                    if Rayfield then Rayfield:Notify({Title = "Loaded", Content = ProfileNameInput, Duration = 2}) end
-                elseif Rayfield then
-                    Rayfield:Notify({Title = "Error", Content = "Not found", Duration = 2})
-                end
-            end
-        end})
-        ProfileTab:CreateButton({Name = "Delete", Callback = function()
-            if ProfileNameInput and ProfileNameInput ~= "" and ProfileNameInput ~= "Default" then
-                Safe(function() if delfile then delfile(GetProfilePath(ProfileNameInput)) end end)
-                if Rayfield then Rayfield:Notify({Title = "Deleted", Content = ProfileNameInput, Duration = 2}) end
-            end
-        end})
-        ProfileTab:CreateButton({Name = "Refresh List", Callback = function()
-            local list = GetProfileList()
-            if Rayfield then Rayfield:Notify({Title = "Profiles", Content = table.concat(list, ", "), Duration = 4}) end
-        end})
-        ProfileTab:CreateButton({Name = "Load Default", Callback = function()
-            LoadProfile("Default")
-            if Rayfield then Rayfield:Notify({Title = "Loaded", Content = "Default", Duration = 2}) end
-        end})
-
-        -- Aimbot
-        local AimbotTab = Window:CreateTab("🎯 Aimbot", 4483362458)
-        AimbotTab:CreateToggle({Name = "Enable Aimbot", CurrentValue = Config.AimbotEnabled, Flag = "AimbotEnabled", Callback = function(v) Config.AimbotEnabled = v; if FOVCircle then FOVCircle.Visible = v end end})
-        AimbotTab:CreateToggle({Name = "Team Check", CurrentValue = Config.AimbotTeamCheck, Flag = "AimbotTeamCheck", Callback = function(v) Config.AimbotTeamCheck = v end})
-        AimbotTab:CreateToggle({Name = "Vis Check", CurrentValue = Config.AimbotVisCheck, Flag = "AimbotVisCheck", Callback = function(v) Config.AimbotVisCheck = v end})
-        AimbotTab:CreateToggle({Name = "Triggerbot", CurrentValue = Config.AimbotTriggerbot, Flag = "AimbotTriggerbot", Callback = function(v) Config.AimbotTriggerbot = v end})
-        AimbotTab:CreateToggle({Name = "Auto-Shoot", CurrentValue = Config.AimbotAutoShoot, Flag = "AimbotAutoShoot", Callback = function(v) Config.AimbotAutoShoot = v end})
-        AimbotTab:CreateDropdown({Name = "Mode", Options = {"Sticky (Lock)", "Normal (Mouse)"}, CurrentOption = {Config.AimbotMode == "Sticky" and "Sticky (Lock)" or "Normal (Mouse)"}, Flag = "AimbotModeDropdown", Callback = function(v)
-            Config.AimbotMode = v[1] == "Sticky (Lock)" and "Sticky" or "Normal"
-        end})
-        AimbotTab:CreateSlider({Name = "FOV", Range = {10, 400}, Increment = 5, Suffix = "px", CurrentValue = Config.AimbotFOV, Flag = "AimbotFOV", Callback = function(v) Config.AimbotFOV = v; if FOVCircle then FOVCircle.Radius = v end end})
-        AimbotTab:CreateSlider({Name = "Smoothing", Range = {0.05, 0.9}, Increment = 0.05, Suffix = "", CurrentValue = Config.AimbotSmoothing, Flag = "AimbotSmoothing", Callback = function(v) Config.AimbotSmoothing = v end})
-        AimbotTab:CreateSlider({Name = "Sticky Strength", Range = {0.5, 1.0}, Increment = 0.05, Suffix = "", CurrentValue = Config.AimbotStickyStrength, Flag = "AimbotStickyStrength", Callback = function(v) Config.AimbotStickyStrength = v end})
-        AimbotTab:CreateSlider({Name = "Aimbot Max Distance", Range = {100, 10000}, Increment = 100, Suffix = "studs", CurrentValue = Config.AimbotMaxDist, Flag = "AimbotMaxDist", Callback = function(v) Config.AimbotMaxDist = v end})
-        AimbotTab:CreateDropdown({Name = "Bone", Options = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}, CurrentOption = {Config.AimbotBone}, Flag = "AimbotBone", Callback = function(v) Config.AimbotBone = v[1] end})
-
-        -- Knife
-        local KnifeTab = Window:CreateTab("🔪 Wall Knife", 4483362458)
-        KnifeTab:CreateToggle({Name = "壁越しナイフ", CurrentValue = Config.KnifeAutoHit, Flag = "KnifeAutoHit", Callback = function(v) Config.KnifeAutoHit = v end})
-        KnifeTab:CreateToggle({Name = "壁越し攻撃", CurrentValue = Config.KnifeWallPenetrate, Flag = "KnifeWallPenetrate", Callback = function(v) Config.KnifeWallPenetrate = v end})
-        KnifeTab:CreateToggle({Name = "ワープスタブ", CurrentValue = Config.KnifeWarp, Flag = "KnifeWarp", Callback = function(v) Config.KnifeWarp = v end})
-        KnifeTab:CreateToggle({Name = "自動照準", CurrentValue = Config.KnifeAutoAim, Flag = "KnifeAutoAim", Callback = function(v) Config.KnifeAutoAim = v end})
-        KnifeTab:CreateSlider({Name = "攻撃範囲", Range = {10, 500}, Increment = 10, Suffix = "studs", CurrentValue = Config.KnifeRange, Flag = "KnifeRange", Callback = function(v) Config.KnifeRange = v end})
-        KnifeTab:CreateSlider({Name = "攻撃間隔", Range = {0.02, 0.5}, Increment = 0.01, Suffix = "s", CurrentValue = Config.KnifeAttackInterval, Flag = "KnifeAttackInterval", Callback = function(v) Config.KnifeAttackInterval = v end})
-
-        -- ESP
-        local ESPTab = Window:CreateTab("👁️ ESP", 4483362458)
-        ESPTab:CreateToggle({Name = "Enable ESP", CurrentValue = Config.ESPEnabled, Flag = "ESPEnabled", Callback = function(v) Config.ESPEnabled = v; if not v then for pl in pairs(ESPObjects) do Safe(RemoveESP, pl) end end end})
-        ESPTab:CreateToggle({Name = "Boxes", CurrentValue = Config.ESPBoxes, Flag = "ESPBoxes", Callback = function(v) Config.ESPBoxes = v end})
-        ESPTab:CreateToggle({Name = "Names", CurrentValue = Config.ESPNames, Flag = "ESPNames", Callback = function(v) Config.ESPNames = v end})
-        ESPTab:CreateToggle({Name = "Distance", CurrentValue = Config.ESPDistance, Flag = "ESPDistance", Callback = function(v) Config.ESPDistance = v end})
-        ESPTab:CreateToggle({Name = "Tracers", CurrentValue = Config.ESPTracers, Flag = "ESPTracers", Callback = function(v) Config.ESPTracers = v end})
-        ESPTab:CreateToggle({Name = "Health Bar", CurrentValue = Config.ESPHealthBar, Flag = "ESPHealthBar", Callback = function(v) Config.ESPHealthBar = v end})
-        ESPTab:CreateToggle({Name = "Team Color", CurrentValue = Config.ESPTeamColor, Flag = "ESPTeamColor", Callback = function(v) Config.ESPTeamColor = v end})
-        ESPTab:CreateSlider({Name = "Max Distance", Range = {100, 5000}, Increment = 50, Suffix = "studs", CurrentValue = Config.ESPMaxDist, Flag = "ESPMaxDist", Callback = function(v) Config.ESPMaxDist = v end})
-
-        -- Movement
-        local MovTab = Window:CreateTab("🏃 Movement", 4483362458)
-        MovTab:CreateToggle({Name = "Speed", CurrentValue = Config.SpeedEnabled, Flag = "SpeedEnabled", Callback = function(v) Config.SpeedEnabled = v end})
-        MovTab:CreateSlider({Name = "Speed Value", Range = {16, 300}, Increment = 2, Suffix = "studs/s", CurrentValue = Config.SpeedValue, Flag = "SpeedValue", Callback = function(v) Config.SpeedValue = v end})
-        MovTab:CreateToggle({Name = "Fly", CurrentValue = Config.FlyEnabled, Flag = "FlyEnabled", Callback = function(v) Config.FlyEnabled = v; if v then Safe(StartFly) else Safe(StopFly) end end})
-        MovTab:CreateSlider({Name = "Fly Speed", Range = {10, 500}, Increment = 5, Suffix = "studs/s", CurrentValue = Config.FlySpeed, Flag = "FlySpeed", Callback = function(v) Config.FlySpeed = v end})
-        MovTab:CreateToggle({Name = "Noclip", CurrentValue = Config.NoclipEnabled, Flag = "NoclipEnabled", Callback = function(v) Config.NoclipEnabled = v end})
-        MovTab:CreateToggle({Name = "Infinite Jump", CurrentValue = Config.InfiniteJump, Flag = "InfiniteJump", Callback = function(v) Config.InfiniteJump = v end})
-        MovTab:CreateToggle({Name = "Bunny Hop", CurrentValue = Config.BunnyHop, Flag = "BunnyHop", Callback = function(v) Config.BunnyHop = v end})
-
-        -- Combat
-        local CombatTab = Window:CreateTab("⚔️ Combat", 4483362458)
-        CombatTab:CreateToggle({Name = "Kill Aura", CurrentValue = Config.KillAura, Flag = "KillAura", Callback = function(v) Config.KillAura = v end})
-        CombatTab:CreateSlider({Name = "Range", Range = {5, 100}, Increment = 1, Suffix = "studs", CurrentValue = Config.KillAuraRange, Flag = "KillAuraRange", Callback = function(v) Config.KillAuraRange = v end})
-        CombatTab:CreateToggle({Name = "Auto Heal", CurrentValue = Config.AutoHeal, Flag = "AutoHeal", Callback = function(v) Config.AutoHeal = v end})
-        CombatTab:CreateSlider({Name = "Heal Amount", Range = {5, 50}, Increment = 1, Suffix = "HP", CurrentValue = Config.HealAmount, Flag = "HealAmount", Callback = function(v) Config.HealAmount = v end})
-
-        -- Misc
-        local MiscTab = Window:CreateTab("🔧 Misc", 4483362458)
-        MiscTab:CreateToggle({Name = "Anti-AFK", CurrentValue = Config.AntiAFK, Flag = "AntiAFK", Callback = function(v) Config.AntiAFK = v end})
-        MiscTab:CreateToggle({Name = "No Fog", CurrentValue = Config.NoFog, Flag = "NoFog", Callback = function(v) Config.NoFog = v end})
-        MiscTab:CreateToggle({Name = "Full Bright", CurrentValue = Config.FullBright, Flag = "FullBright", Callback = function(v) Config.FullBright = v end})
-        MiscTab:CreateButton({Name = "Teleport to Enemy", Callback = TeleportToTarget})
-        MiscTab:CreateButton({Name = "Rejoin", Callback = function() TeleportService:Teleport(game.PlaceId, LP) end})
-        MiscTab:CreateButton({Name = "Respawn", Callback = function() LP:LoadCharacter() end})
-
-        Rayfield:Notify({
-            Title = "💙💜 ZETA X FINAL",
-            Content = "全バグ修正完了 | メニュー: Kキー",
-            Duration = 5,
-        })
+    if not success then
+        print("[ZETA X] Rayfield CreateWindow failed: " .. tostring(err))
+        return false
     end
+
+    if not Window then return false end
+
+    -- Profiles
+    local ProfileTab = Window:CreateTab("💾 Profiles", 4483362458)
+    local ProfileNameInput = ""
+    ProfileTab:CreateInput({Name = "Profile Name", PlaceholderText = "Enter name...", RemoveTextAfterFocusLost = false, Callback = function(t) ProfileNameInput = t end})
+    ProfileTab:CreateButton({Name = "Save", Callback = function()
+        if ProfileNameInput and ProfileNameInput ~= "" then
+            SaveProfile(ProfileNameInput)
+        elseif Rayfield then
+            Rayfield:Notify({Title = "Error", Content = "Enter name", Duration = 2})
+        end
+    end})
+    ProfileTab:CreateButton({Name = "Load", Callback = function()
+        if ProfileNameInput and ProfileNameInput ~= "" then
+            if LoadProfile(ProfileNameInput) then
+                if Rayfield then Rayfield:Notify({Title = "Loaded", Content = ProfileNameInput, Duration = 2}) end
+            elseif Rayfield then
+                Rayfield:Notify({Title = "Error", Content = "Not found", Duration = 2})
+            end
+        end
+    end})
+    ProfileTab:CreateButton({Name = "Delete", Callback = function()
+        if ProfileNameInput and ProfileNameInput ~= "" and ProfileNameInput ~= "Default" then
+            Safe(function() if delfile then delfile(GetProfilePath(ProfileNameInput)) end end)
+            if Rayfield then Rayfield:Notify({Title = "Deleted", Content = ProfileNameInput, Duration = 2}) end
+        end
+    end})
+    ProfileTab:CreateButton({Name = "Refresh List", Callback = function()
+        local list = GetProfileList()
+        if Rayfield then Rayfield:Notify({Title = "Profiles", Content = table.concat(list, ", "), Duration = 4}) end
+    end})
+    ProfileTab:CreateButton({Name = "Load Default", Callback = function()
+        LoadProfile("Default")
+        if Rayfield then Rayfield:Notify({Title = "Loaded", Content = "Default", Duration = 2}) end
+    end})
+
+    -- Aimbot
+    local AimbotTab = Window:CreateTab("🎯 Aimbot", 4483362458)
+    AimbotTab:CreateToggle({Name = "Enable Aimbot", CurrentValue = Config.AimbotEnabled, Flag = "AimbotEnabled", Callback = function(v) Config.AimbotEnabled = v; if FOVCircle then FOVCircle.Visible = v end end})
+    AimbotTab:CreateToggle({Name = "Team Check", CurrentValue = Config.AimbotTeamCheck, Flag = "AimbotTeamCheck", Callback = function(v) Config.AimbotTeamCheck = v end})
+    AimbotTab:CreateToggle({Name = "Vis Check", CurrentValue = Config.AimbotVisCheck, Flag = "AimbotVisCheck", Callback = function(v) Config.AimbotVisCheck = v end})
+    AimbotTab:CreateToggle({Name = "Triggerbot", CurrentValue = Config.AimbotTriggerbot, Flag = "AimbotTriggerbot", Callback = function(v) Config.AimbotTriggerbot = v end})
+    AimbotTab:CreateToggle({Name = "Auto-Shoot", CurrentValue = Config.AimbotAutoShoot, Flag = "AimbotAutoShoot", Callback = function(v) Config.AimbotAutoShoot = v end})
+    AimbotTab:CreateDropdown({Name = "Mode", Options = {"Sticky (Lock)", "Normal (Mouse)"}, CurrentOption = {Config.AimbotMode == "Sticky" and "Sticky (Lock)" or "Normal (Mouse)"}, Flag = "AimbotModeDropdown", Callback = function(v)
+        Config.AimbotMode = v[1] == "Sticky (Lock)" and "Sticky" or "Normal"
+    end})
+    AimbotTab:CreateSlider({Name = "FOV", Range = {10, 400}, Increment = 5, Suffix = "px", CurrentValue = Config.AimbotFOV, Flag = "AimbotFOV", Callback = function(v) Config.AimbotFOV = v; if FOVCircle then FOVCircle.Radius = v end end})
+    AimbotTab:CreateSlider({Name = "Smoothing", Range = {0.05, 0.9}, Increment = 0.05, Suffix = "", CurrentValue = Config.AimbotSmoothing, Flag = "AimbotSmoothing", Callback = function(v) Config.AimbotSmoothing = v end})
+    AimbotTab:CreateSlider({Name = "Sticky Strength", Range = {0.5, 1.0}, Increment = 0.05, Suffix = "", CurrentValue = Config.AimbotStickyStrength, Flag = "AimbotStickyStrength", Callback = function(v) Config.AimbotStickyStrength = v end})
+    AimbotTab:CreateSlider({Name = "Aimbot Max Distance", Range = {100, 10000}, Increment = 100, Suffix = "studs", CurrentValue = Config.AimbotMaxDist, Flag = "AimbotMaxDist", Callback = function(v) Config.AimbotMaxDist = v end})
+    AimbotTab:CreateDropdown({Name = "Bone", Options = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}, CurrentOption = {Config.AimbotBone}, Flag = "AimbotBone", Callback = function(v) Config.AimbotBone = v[1] end})
+
+    -- Knife
+    local KnifeTab = Window:CreateTab("🔪 Wall Knife", 4483362458)
+    KnifeTab:CreateToggle({Name = "壁越しナイフ", CurrentValue = Config.KnifeAutoHit, Flag = "KnifeAutoHit", Callback = function(v) Config.KnifeAutoHit = v end})
+    KnifeTab:CreateToggle({Name = "壁越し攻撃", CurrentValue = Config.KnifeWallPenetrate, Flag = "KnifeWallPenetrate", Callback = function(v) Config.KnifeWallPenetrate = v end})
+    KnifeTab:CreateToggle({Name = "ワープスタブ", CurrentValue = Config.KnifeWarp, Flag = "KnifeWarp", Callback = function(v) Config.KnifeWarp = v end})
+    KnifeTab:CreateToggle({Name = "自動照準", CurrentValue = Config.KnifeAutoAim, Flag = "KnifeAutoAim", Callback = function(v) Config.KnifeAutoAim = v end})
+    KnifeTab:CreateSlider({Name = "攻撃範囲", Range = {10, 500}, Increment = 10, Suffix = "studs", CurrentValue = Config.KnifeRange, Flag = "KnifeRange", Callback = function(v) Config.KnifeRange = v end})
+    KnifeTab:CreateSlider({Name = "攻撃間隔", Range = {0.02, 0.5}, Increment = 0.01, Suffix = "s", CurrentValue = Config.KnifeAttackInterval, Flag = "KnifeAttackInterval", Callback = function(v) Config.KnifeAttackInterval = v end})
+
+    -- ESP
+    local ESPTab = Window:CreateTab("👁️ ESP", 4483362458)
+    ESPTab:CreateToggle({Name = "Enable ESP", CurrentValue = Config.ESPEnabled, Flag = "ESPEnabled", Callback = function(v) Config.ESPEnabled = v; if not v then for pl in pairs(ESPObjects) do Safe(RemoveESP, pl) end end end})
+    ESPTab:CreateToggle({Name = "Boxes", CurrentValue = Config.ESPBoxes, Flag = "ESPBoxes", Callback = function(v) Config.ESPBoxes = v end})
+    ESPTab:CreateToggle({Name = "Names", CurrentValue = Config.ESPNames, Flag = "ESPNames", Callback = function(v) Config.ESPNames = v end})
+    ESPTab:CreateToggle({Name = "Distance", CurrentValue = Config.ESPDistance, Flag = "ESPDistance", Callback = function(v) Config.ESPDistance = v end})
+    ESPTab:CreateToggle({Name = "Tracers", CurrentValue = Config.ESPTracers, Flag = "ESPTracers", Callback = function(v) Config.ESPTracers = v end})
+    ESPTab:CreateToggle({Name = "Health Bar", CurrentValue = Config.ESPHealthBar, Flag = "ESPHealthBar", Callback = function(v) Config.ESPHealthBar = v end})
+    ESPTab:CreateToggle({Name = "Team Color", CurrentValue = Config.ESPTeamColor, Flag = "ESPTeamColor", Callback = function(v) Config.ESPTeamColor = v end})
+    ESPTab:CreateSlider({Name = "Max Distance", Range = {100, 5000}, Increment = 50, Suffix = "studs", CurrentValue = Config.ESPMaxDist, Flag = "ESPMaxDist", Callback = function(v) Config.ESPMaxDist = v end})
+
+    -- Movement
+    local MovTab = Window:CreateTab("🏃 Movement", 4483362458)
+    MovTab:CreateToggle({Name = "Speed", CurrentValue = Config.SpeedEnabled, Flag = "SpeedEnabled", Callback = function(v) Config.SpeedEnabled = v end})
+    MovTab:CreateSlider({Name = "Speed Value", Range = {16, 300}, Increment = 2, Suffix = "studs/s", CurrentValue = Config.SpeedValue, Flag = "SpeedValue", Callback = function(v) Config.SpeedValue = v end})
+    MovTab:CreateToggle({Name = "Fly", CurrentValue = Config.FlyEnabled, Flag = "FlyEnabled", Callback = function(v) Config.FlyEnabled = v; if v then Safe(StartFly) else Safe(StopFly) end end})
+    MovTab:CreateSlider({Name = "Fly Speed", Range = {10, 500}, Increment = 5, Suffix = "studs/s", CurrentValue = Config.FlySpeed, Flag = "FlySpeed", Callback = function(v) Config.FlySpeed = v end})
+    MovTab:CreateToggle({Name = "Noclip", CurrentValue = Config.NoclipEnabled, Flag = "NoclipEnabled", Callback = function(v) Config.NoclipEnabled = v end})
+    MovTab:CreateToggle({Name = "Infinite Jump", CurrentValue = Config.InfiniteJump, Flag = "InfiniteJump", Callback = function(v) Config.InfiniteJump = v end})
+    MovTab:CreateToggle({Name = "Bunny Hop", CurrentValue = Config.BunnyHop, Flag = "BunnyHop", Callback = function(v) Config.BunnyHop = v end})
+
+    -- Combat
+    local CombatTab = Window:CreateTab("⚔️ Combat", 4483362458)
+    CombatTab:CreateToggle({Name = "Kill Aura", CurrentValue = Config.KillAura, Flag = "KillAura", Callback = function(v) Config.KillAura = v end})
+    CombatTab:CreateSlider({Name = "Range", Range = {5, 100}, Increment = 1, Suffix = "studs", CurrentValue = Config.KillAuraRange, Flag = "KillAuraRange", Callback = function(v) Config.KillAuraRange = v end})
+    CombatTab:CreateToggle({Name = "Auto Heal", CurrentValue = Config.AutoHeal, Flag = "AutoHeal", Callback = function(v) Config.AutoHeal = v end})
+    CombatTab:CreateSlider({Name = "Heal Amount", Range = {5, 50}, Increment = 1, Suffix = "HP", CurrentValue = Config.HealAmount, Flag = "HealAmount", Callback = function(v) Config.HealAmount = v end})
+
+    -- Misc
+    local MiscTab = Window:CreateTab("🔧 Misc", 4483362458)
+    MiscTab:CreateToggle({Name = "Anti-AFK", CurrentValue = Config.AntiAFK, Flag = "AntiAFK", Callback = function(v) Config.AntiAFK = v end})
+    MiscTab:CreateToggle({Name = "No Fog", CurrentValue = Config.NoFog, Flag = "NoFog", Callback = function(v) Config.NoFog = v end})
+    MiscTab:CreateToggle({Name = "Full Bright", CurrentValue = Config.FullBright, Flag = "FullBright", Callback = function(v) Config.FullBright = v end})
+    MiscTab:CreateButton({Name = "Teleport to Enemy", Callback = TeleportToTarget})
+    MiscTab:CreateButton({Name = "Rejoin", Callback = function() TeleportService:Teleport(game.PlaceId, LP) end})
+    MiscTab:CreateButton({Name = "Respawn", Callback = function() LP:LoadCharacter() end})
+
+    Rayfield:Notify({
+        Title = "💙💜 ZETA X FINAL",
+        Content = "完全安定版 | メニュー: Kキー",
+        Duration = 5,
+    })
+
+    return true
+end
+
+-- ★★★ UI作成 (リトライ付き) ★★★
+local function CreateUIWithRetry()
+    local success = CreateUI()
+    if not success then
+        print("[ZETA X] UI creation failed, retrying in 5 seconds...")
+        task.spawn(function()
+            task.wait(5)
+            CreateUI()
+        end)
+    end
+end
+
+-- 実行 (Rayfieldロードを待ってから)
+if RayfieldLoaded then
+    CreateUIWithRetry()
 else
-    pcall(function()
-        CoreGui:SetCore("SendNotification", {
-            Title = "ZETA X FINAL",
-            Content = "Loaded | All bugs fixed",
-            Duration = 5,
-        })
+    task.spawn(function()
+        while not RayfieldLoaded do
+            task.wait(1)
+        end
+        CreateUIWithRetry()
     end)
 end
 
 -- ============================================================
---   メニュー表示切替 (Kキー)
+--   ★★★ メニュー表示切替 (Kキー) ★★★
 -- ============================================================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.KeyCode == Enum.KeyCode.K then
-        if Window and Window.Visible ~= nil then
+        if Window then
             Window.Visible = not Window.Visible
         end
     end
 end)
 
-Debug("ZETA X FINAL loaded. Menu: K key. All bugs fixed.")
+Debug("ZETA X FINAL loaded. Menu: K key. Fully stable.")
 
 while true do task.wait(10) end
 
