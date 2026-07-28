@@ -1,9 +1,9 @@
 -- ============================================================
---   ZETA X – FINAL COMPLETE (最終完全版)
+--   ZETA X – FINAL COMPLETE (完全版・最終)
 --   Rivals専用 完全安定版チート
---   メニューキー: K | ブルーパープルテーマ
---   壁越しナイフ削除済み | continue完全排除
---   全機能安定動作保証
+--   メニューキー: K (トグル) | 起動時自動表示
+--   ブルーパープルテーマ | 全機能安定動作
+--   構文エラー完全修正 | continue/goto排除
 -- ============================================================
 
 -- ★★★ ゲームロード待機 ★★★
@@ -16,7 +16,7 @@ if not _G._clientalert then
     _G._clientalert = function() end
 end
 
--- ★★★ サービス定義 ★★★
+-- ★★★ トップレベルでサービス定義 ★★★
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -39,7 +39,7 @@ local function Main()
 --   カメラ取得
 -- ============================================================
 local function GetCamera()
-    return Workspace and Workspace.CurrentCamera
+    return Workspace.CurrentCamera
 end
 
 -- ============================================================
@@ -204,7 +204,8 @@ end
 local function GetRootPart(pl)
     if not pl then return nil end
     local ch = pl.Character
-    return ch and ch:FindFirstChild("HumanoidRootPart")
+    if not ch then return nil end
+    return ch:FindFirstChild("HumanoidRootPart")
 end
 
 local function GetBone(pl, bone)
@@ -217,7 +218,8 @@ end
 local function GetHumanoid(pl)
     if not pl then return nil end
     local ch = pl.Character
-    return ch and ch:FindFirstChildOfClass("Humanoid")
+    if not ch then return nil end
+    return ch:FindFirstChildOfClass("Humanoid")
 end
 
 local function IsAlive(pl)
@@ -285,7 +287,6 @@ local function IsTarget(pl)
     return true
 end
 
--- // 安全なマウスクリック
 local function SafeMouseClick()
     if VirtualUser then
         pcall(function()
@@ -674,7 +675,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ ESP 更新 (continue 完全排除・ifネスト) ★★★
+--   ESP 更新 (continue 完全排除・ifネスト)
 -- ============================================================
 RunService.Heartbeat:Connect(function()
     ESPUpdateCounter = ESPUpdateCounter + 1
@@ -689,7 +690,6 @@ RunService.Heartbeat:Connect(function()
     if not cam or not Character then return end
 
     for _, pl in ipairs(Players:GetPlayers()) do
-        -- continue を使わず if で全体を囲む
         if pl ~= LP then
             if not ESPObjects[pl] then Safe(CreateESP, pl) end
             local objs = ESPObjects[pl]
@@ -710,7 +710,6 @@ RunService.Heartbeat:Connect(function()
                             local isEnemy = IsEnemy(pl)
                             local color = isEnemy and Theme.ESPEnemy or Theme.ESPAlly
 
-                            -- ボックス描画
                             if Config.ESPBoxes then
                                 local height = 30
                                 if onF and zF > 0 then
@@ -760,7 +759,6 @@ RunService.Heartbeat:Connect(function()
                                 if objs.healthBar then Safe(function() objs.healthBar.Visible = false end) end
                             end
 
-                            -- Name
                             if Config.ESPNames and objs.nameTag then
                                 Safe(function()
                                     objs.nameTag.Visible = true
@@ -771,7 +769,6 @@ RunService.Heartbeat:Connect(function()
                                 if objs.nameTag then Safe(function() objs.nameTag.Visible = false end) end
                             end
 
-                            -- Distance
                             if Config.ESPDistance and objs.distTag then
                                 Safe(function()
                                     objs.distTag.Visible = true
@@ -782,7 +779,6 @@ RunService.Heartbeat:Connect(function()
                                 if objs.distTag then Safe(function() objs.distTag.Visible = false end) end
                             end
 
-                            -- Tracers
                             if Config.ESPTracers and objs.tracer then
                                 local vp = cam.ViewportSize
                                 Safe(function()
@@ -795,7 +791,6 @@ RunService.Heartbeat:Connect(function()
                                 if objs.tracer then Safe(function() objs.tracer.Visible = false end) end
                             end
                         else
-                            -- 画面外なら非表示
                             for _, obj in pairs(objs) do
                                 Safe(function() if obj then obj.Visible = false end end)
                             end
@@ -804,7 +799,6 @@ RunService.Heartbeat:Connect(function()
                         Safe(RemoveESP, pl)
                     end
                 else
-                    -- 距離オーバーで非表示
                     for _, obj in pairs(objs) do
                         Safe(function() if obj then obj.Visible = false end end)
                     end
@@ -817,7 +811,7 @@ end)
 Players.PlayerRemoving:Connect(RemoveESP)
 
 -- ============================================================
---   MOVEMENT (Speed, Jump, BHop)
+--   MOVEMENT
 -- ============================================================
 RunService.Heartbeat:Connect(function()
     if not Config.SpeedEnabled then return end
@@ -1001,7 +995,7 @@ LP.Idled:Connect(function()
 end)
 
 -- ============================================================
---   RAYFIELD UI 構築
+--   RAYFIELD UI 構築 (起動時自動表示)
 -- ============================================================
 local Window, WindowCreated = nil, false
 
@@ -1027,6 +1021,7 @@ local function CreateUI()
     end
 
     WindowCreated = true
+    Window.Visible = true  -- ★★★ 起動時に自動表示 ★★★
 
     -- Profiles
     local ProfileTab = Window:CreateTab("💾 Profiles", 4483362458)
@@ -1135,7 +1130,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
-print("[ZETA X] Final Complete loaded. Menu: K key.")
+print("[ZETA X] Final Complete loaded. Menu: K key (toggle).")
 
 while true do task.wait(10) end
 
