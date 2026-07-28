@@ -1,6 +1,6 @@
- -- ============================================================
---   ZETA X – ULTIMATE FINAL (完全版・完結)
---   SafeNotify 完全フォールバック版 (SetCore不使用)
+-- ============================================================
+--   ZETA X – ULTIMATE FINAL (完全版)
+--   壁越しナイフ修正済み | 全機能安定動作
 --   メニューキー: K | ブルーパープルテーマ
 -- ============================================================
 
@@ -65,20 +65,16 @@ task.spawn(function()
 end)
 
 -- ============================================================
---   ★★★ 安全な通知関数 (完全エラー対策・最終決定版) ★★★
---   CoreGui/StarterGuiのSetCoreは使用しない（環境依存エラー回避）
+--   ★★★ 安全な通知関数 ★★★
 -- ============================================================
 local function SafeNotify(title, content, duration)
-    -- Rayfield優先
     if Rayfield and RayfieldLoaded then
-        local ok, err = pcall(function()
+        pcall(function()
             Rayfield:Notify({Title = title, Content = content, Duration = duration or 3})
         end)
-        if ok then return end
+    else
+        print("[ZETA X] " .. title .. ": " .. content)
     end
-
-    -- フォールバック: コンソール出力 (SetCoreは使用しない)
-    print(string.format("[ZETA X] %s: %s", title, content))
 end
 
 -- ============================================================
@@ -147,7 +143,7 @@ local Config = {
 }
 
 -- ============================================================
---   ★★★ 全関数を先に定義 ★★★
+--   ★★★ 全関数 ★★★
 -- ============================================================
 
 -- // プロファイル管理
@@ -633,7 +629,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
---   ★★★ 壁越しナイフ ★★★
+--   ★★★ 壁越しナイフ (修正済み) ★★★
 -- ============================================================
 local LastTriggerTime = 0
 local LastAutoShootTime = 0
@@ -706,11 +702,16 @@ RunService.Heartbeat:Connect(function()
         end
 
         if KnifeRemote then
+            -- ★★★ 攻撃位置を取得（頭 → なければ胴体） ★★★
+            local attackPos = GetBone(target, "Head")
+            if not attackPos then
+                attackPos = targetRoot
+            end
             Safe(function()
                 if KnifeRemote.FireServer then
-                    KnifeRemote:FireServer(target.Character or target)
+                    KnifeRemote:FireServer(attackPos.Position)  -- Vector3 を送信
                 elseif KnifeRemote.InvokeServer then
-                    KnifeRemote:InvokeServer(target.Character or target)
+                    KnifeRemote:InvokeServer(attackPos.Position)
                 end
             end)
             KnifeLastAttack = now
@@ -1329,5 +1330,4 @@ end
 local ok, err = pcall(Main)
 if not ok then
     warn("[ZETA X] スクリプト実行エラー: " .. tostring(err))
-    -- エラー時はコンソール出力のみ（通知は行わない）
 end
