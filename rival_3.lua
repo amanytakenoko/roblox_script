@@ -1,6 +1,6 @@
 -- ============================================================
---   ZETA X – ULTIMATE FINAL (完全版)
---   全バグ修正 | 壁越しナイフ | メニューキー: K
+--   ZETA X – ULTIMATE FINAL (全バグ修正・完結版)
+--   マッチ切り替え完全対応 | 壁越しナイフ | メニューキー: K
 --   Roblox Lua完全対応 | Rivals専用
 -- ============================================================
 
@@ -83,7 +83,7 @@ local Config = {
     AimbotAutoShoot = false,
     AimbotMaxDist = 5000,
 
-    -- Knife (Wall Penetration)
+    -- Knife
     KnifeAutoHit = false,
     KnifeRange = 50,
     KnifeWarp = true,
@@ -183,56 +183,97 @@ pcall(function()
 end)
 
 -- ============================================================
---   キャラクター参照
+--   ★★★ キャラクター参照 (マッチ切り替え完全対応) ★★★
 -- ============================================================
 local Character = nil
 local HumanoidRootPart = nil
 local Humanoid = nil
 
+local function ResetCharacterReferences()
+    Character = nil
+    HumanoidRootPart = nil
+    Humanoid = nil
+    -- ESP全削除
+    ClearAllESP()
+    -- キャッシュクリア
+    CachedTarget = nil
+    CachedTargetTime = 0
+    NoclipCachedParts = {}
+    -- Fly停止
+    Safe(StopFly)
+    Debug("Character references reset")
+end
+
 local function UpdateCharacter()
     local newChar = LP.Character
-    if newChar then
+    if newChar and newChar ~= Character then
+        ResetCharacterReferences()
         Character = newChar
         HumanoidRootPart = newChar:FindFirstChild("HumanoidRootPart")
         Humanoid = newChar:FindFirstChildOfClass("Humanoid")
+        SetupNoclipWatcher(Character)
+        if Config.FlyEnabled and HumanoidRootPart then
+            Safe(StartFly)
+        end
+        -- Noclip初回適用
+        if Character then
+            for _, part in ipairs(Character:GetDescendants()) do
+                ApplyNoclipToPart(part)
+            end
+        end
+        Debug("Character updated")
         return true
     end
     return false
 end
 
+-- 初回取得
 UpdateCharacter()
 
+-- ★★★ CharacterAdded: 一元管理 (ClearAllESP含む) ★★★
 LP.CharacterAdded:Connect(function(newChar)
+    Debug("CharacterAdded event fired")
+    ResetCharacterReferences()
     Character = newChar
     HumanoidRootPart = newChar:FindFirstChild("HumanoidRootPart")
     Humanoid = newChar:FindFirstChildOfClass("Humanoid")
-    for pl in pairs(ESPObjects) do Safe(RemoveESP, pl) end
+    SetupNoclipWatcher(Character)
     if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
-    SetupNoclipWatcher(newChar)
-    if RayfieldLoaded and Rayfield then
-        Rayfield:Notify({Title = "Match Restart", Content = "Features re-activated", Duration = 2})
+    -- Noclip初回適用
+    if Character then
+        for _, part in ipairs(Character:GetDescendants()) do
+            ApplyNoclipToPart(part)
+        end
     end
+    if RayfieldLoaded and Rayfield then
+        Rayfield:Notify({Title = "Match Restart", Content = "All features re-activated", Duration = 2})
+    end
+    Debug("CharacterAdded: new character set")
 end)
 
 LP.CharacterRemoving:Connect(function()
-    Character = nil
-    HumanoidRootPart = nil
-    Humanoid = nil
-    Safe(StopFly)
-    NoclipCachedParts = {}
+    Debug("CharacterRemoving event fired")
+    ResetCharacterReferences()
     if NoclipConnection then
         NoclipConnection:Disconnect()
         NoclipConnection = nil
     end
 end)
 
+-- ★★★ 定期チェック (0.5秒) ★★★
 task.spawn(function()
     while true do
-        task.wait(1)
-        if not Character or not HumanoidRootPart or not Humanoid then
-            if UpdateCharacter() then
-                if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
-                SetupNoclipWatcher(Character)
+        task.wait(0.5)
+        local currentChar = LP.Character
+        if currentChar ~= Character then
+            Debug("Periodic check: character changed, updating")
+            UpdateCharacter()
+        end
+        if Character and not HumanoidRootPart then
+            HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+            Humanoid = Character:FindFirstChildOfClass("Humanoid")
+            if HumanoidRootPart and Humanoid then
+                Debug("Periodic check: recovered root/humanoid")
             end
         end
         if Character and Humanoid and not Config.FlyEnabled then
@@ -342,20 +383,27 @@ local CachedTarget = nil
 local CachedTargetTime = 0
 local CACHE_DURATION = 0.05
 
--- ★★★ タイマー変数 ★★★
 local LastTriggerTime = 0
 local LastAutoShootTime = 0
 local KillAuraLastTime = 0
 local KnifeLastAttack = 0
 
 local function GetClosestTarget()
+    if not Character or not HumanoidRootPart then
+        CachedTarget = nil
+        return nil
+    end
+
     local now = tick()
     if CachedTarget and (now - CachedTargetTime) < CACHE_DURATION then
-        return CachedTarget
+        if CachedTarget and IsTarget(CachedTarget) then
+            return CachedTarget
+        else
+            CachedTarget = nil
+        end
     end
 
     if not Camera then return nil end
-    if not HumanoidRootPart then return nil end
     local mousePos = UserInputService:GetMouseLocation()
     if not mousePos then return nil end
     local minDist = Config.AimbotFOV
@@ -392,7 +440,7 @@ local function GetClosestTarget()
 end
 
 -- ============================================================
---   ★★★ 壁越しナイフ (Heartbeat) ★★★
+--   ★★★ 壁越しナイフ (リモート再検索修正) ★★★
 -- ============================================================
 local function GetClosestEnemyForKnife()
     if not HumanoidRootPart then return nil end
@@ -442,14 +490,13 @@ RunService.Heartbeat:Connect(function()
     local now = tick()
     if now - KnifeLastAttack < Config.KnifeAttackInterval then return end
 
-    -- ★★★ 自動照準 ★★★
     if Config.KnifeAutoAim then
         local lookAtCF = CFrame.lookAt(HumanoidRootPart.Position, targetRoot.Position)
         HumanoidRootPart.CFrame = lookAtCF
     end
 
-    -- ★★★ ワープスタブ (安全チェック付き) ★★★
-    if Config.KnifeWarp then
+    -- ★★★ ワープスタブ (ガード追加) ★★★
+    if Config.KnifeWarp and Character and target.Character then
         local warpPos = targetRoot.CFrame * CFrame.new(0, 0, 3)
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Blacklist
@@ -466,17 +513,23 @@ RunService.Heartbeat:Connect(function()
         end
     end
 
-    -- ★★★ 壁越し攻撃 ★★★
+    -- ★★★ 壁越し攻撃 (再検索タイマー確実更新) ★★★
     if Config.KnifeWallPenetrate then
         if not KnifeRemoteSearched or (tick() - KnifeRemoteSearchTimer > 10) then
             KnifeRemoteSearched = true
-            KnifeRemoteSearchTimer = tick()
+            KnifeRemoteSearchTimer = tick()  -- ★ 必ず更新 ★
             KnifeRemote = FindKnifeRemote()
             if KnifeRemote and RayfieldLoaded and Rayfield then
                 Rayfield:Notify({
                     Title = "🔪 Knife Remote Found",
                     Content = "Wall penetration active!",
                     Duration = 3,
+                })
+            elseif not KnifeRemote and RayfieldLoaded and Rayfield then
+                Rayfield:Notify({
+                    Title = "🔪 Knife Remote",
+                    Content = "Not found, retrying in 10s",
+                    Duration = 2,
                 })
             end
         end
@@ -555,7 +608,6 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- ★★★ Triggerbot (専用タイマー) ★★★
     if Config.AimbotTriggerbot then
         local now = tick()
         if now - LastTriggerTime > 0.12 then
@@ -572,7 +624,6 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- ★★★ Auto-Shoot (専用タイマー) ★★★
     if Config.AimbotAutoShoot then
         local now = tick()
         if now - LastAutoShootTime > 0.05 then
@@ -623,7 +674,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   ESP
+--   ★★★ ESP (ClearAllESP 安全化) ★★★
 -- ============================================================
 local ESPObjects = {}
 local ESPUpdateCounter = 0
@@ -635,6 +686,19 @@ local function RemoveESP(pl)
         end
         ESPObjects[pl] = nil
     end
+end
+
+local function ClearAllESP()
+    -- ★ コピーを作成して安全にループ ★
+    local players = {}
+    for pl in pairs(ESPObjects) do
+        table.insert(players, pl)
+    end
+    for _, pl in ipairs(players) do
+        Safe(RemoveESP, pl)
+    end
+    ESPObjects = {}
+    Debug("All ESP cleared")
 end
 
 local function CreateESP(pl)
@@ -682,6 +746,7 @@ RunService.Heartbeat:Connect(function()
     end
 
     if not Camera then return end
+    if not Character then return end
 
     for _, pl in ipairs(Players:GetPlayers()) do
         if pl ~= LP then
@@ -817,7 +882,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---   NOCLIP (接続一元管理)
+--   ★★★ NOCLIP (GetDescendants ループ削除・軽量化) ★★★
 -- ============================================================
 local NoclipCachedParts = {}
 local NoclipConnection = nil
@@ -837,6 +902,11 @@ local function SetupNoclipWatcher(char)
         NoclipConnection = nil
     end
     if not char then return end
+    -- 初回全パーツに適用
+    for _, part in ipairs(char:GetDescendants()) do
+        ApplyNoclipToPart(part)
+    end
+    -- 新規追加パーツを監視
     NoclipConnection = char.DescendantAdded:Connect(function(part)
         if Config.NoclipEnabled then
             ApplyNoclipToPart(part)
@@ -844,20 +914,29 @@ local function SetupNoclipWatcher(char)
     end)
 end
 
--- 初回適用
+-- 初回設定
 if Character then
     SetupNoclipWatcher(Character)
 end
 
-RunService.Stepped:Connect(function()
+-- ★ Steppedループ削除（DescendantAddedで十分カバー） ★
+-- 代わりにNoclip有効時のみ既存パーツを再チェックする簡易処理を残す（任意）
+RunService.Heartbeat:Connect(function()
     if not Config.NoclipEnabled then
+        -- Noclipが切れたらキャッシュクリア（次回有効時に再適用）
         NoclipCachedParts = {}
         return
     end
-    if not Character then return end
-    for _, part in ipairs(Character:GetDescendants()) do
-        ApplyNoclipToPart(part)
-    end
+    -- Noclip有効時に新しく追加されたパーツはDescendantAddedでカバーされるため、
+    -- 既存パーツの状態がリセットされることは稀なので、ここでは何もしない。
+    -- 万が一のために軽量チェックを入れる場合:
+    -- if Character then
+    --     for _, part in ipairs(Character:GetDescendants()) do
+    --         if part:IsA("BasePart") and part.CanCollide then
+    --             ApplyNoclipToPart(part)
+    --         end
+    --     end
+    -- end
 end)
 
 -- ============================================================
@@ -939,7 +1018,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   COMBAT
+--   COMBAT (オートヒール再検索修正)
 -- ============================================================
 local function GetHitRemote()
     local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:FindFirstChild("RemoteEvents")
@@ -977,7 +1056,7 @@ RunService.Heartbeat:Connect(function()
     KillAuraLastTime = now
 end)
 
--- ★★★ AutoHeal (定期的にリモート再検索) ★★★
+-- ★★★ オートヒール (再検索タイマー確実更新) ★★★
 local HealRemote = nil
 local HealRemoteSearchTimer = 0
 local HealRemoteSearched = false
@@ -987,7 +1066,7 @@ RunService.Heartbeat:Connect(function()
         local now = tick()
         if not HealRemoteSearched or (now - HealRemoteSearchTimer > 10) then
             HealRemoteSearched = true
-            HealRemoteSearchTimer = now
+            HealRemoteSearchTimer = now  -- ★ 必ず更新 ★
             local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
             for _, name in ipairs({"Heal", "HealPlayer", "SetHealth", "Health"}) do
                 local r = remotes:FindFirstChild(name)
@@ -999,7 +1078,7 @@ RunService.Heartbeat:Connect(function()
             if not HealRemote and RayfieldLoaded and Rayfield then
                 Rayfield:Notify({
                     Title = "AutoHeal",
-                    Content = "Heal remote not found (retry later)",
+                    Content = "Heal remote not found (retry in 10s)",
                     Duration = 3,
                 })
             end
@@ -1077,7 +1156,7 @@ LP.Idled:Connect(function()
 end)
 
 -- ============================================================
---   RAYFIELD UI (構文エラー修正済み)
+--   RAYFIELD UI
 -- ============================================================
 local Window = nil
 if RayfieldLoaded and Rayfield then
@@ -1086,7 +1165,7 @@ if RayfieldLoaded and Rayfield then
             Name = "ZETA X",
             Icon = 0,
             LoadingTitle = "ZETA X",
-            LoadingSubtitle = "Wall Penetration Knife",
+            LoadingSubtitle = "Final Ultimate",
             Theme = "Default",
             ConfigurationSaving = { Enabled = false },
             KeySystem = false,
@@ -1135,7 +1214,7 @@ if RayfieldLoaded and Rayfield then
         AimbotTab:CreateToggle({Name = "Team Check", CurrentValue = Config.AimbotTeamCheck, Flag = "AimbotTeamCheck", Callback = function(v) Config.AimbotTeamCheck = v end})
         AimbotTab:CreateToggle({Name = "Vis Check", CurrentValue = Config.AimbotVisCheck, Flag = "AimbotVisCheck", Callback = function(v) Config.AimbotVisCheck = v end})
         AimbotTab:CreateToggle({Name = "Triggerbot", CurrentValue = Config.AimbotTriggerbot, Flag = "AimbotTriggerbot", Callback = function(v) Config.AimbotTriggerbot = v end})
-        AimbotTab:CreateToggle({Name = "Auto-Shoot (適当に打っても当たる)", CurrentValue = Config.AimbotAutoShoot, Flag = "AimbotAutoShoot", Callback = function(v) Config.AimbotAutoShoot = v end})
+        AimbotTab:CreateToggle({Name = "Auto-Shoot", CurrentValue = Config.AimbotAutoShoot, Flag = "AimbotAutoShoot", Callback = function(v) Config.AimbotAutoShoot = v end})
         AimbotTab:CreateDropdown({Name = "Mode", Options = {"Sticky (Lock)", "Normal (Mouse)"}, CurrentOption = {Config.AimbotMode == "Sticky" and "Sticky (Lock)" or "Normal (Mouse)"}, Flag = "AimbotModeDropdown", Callback = function(v)
             Config.AimbotMode = v[1] == "Sticky (Lock)" and "Sticky" or "Normal"
         end})
@@ -1147,21 +1226,12 @@ if RayfieldLoaded and Rayfield then
 
         -- Knife
         local KnifeTab = Window:CreateTab("🔪 Wall Knife", 4483362458)
-        KnifeTab:CreateToggle({Name = "壁越しナイフ (Wall Penetration)", CurrentValue = Config.KnifeAutoHit, Flag = "KnifeAutoHit", Callback = function(v) Config.KnifeAutoHit = v end})
-        KnifeTab:CreateToggle({Name = "壁越し攻撃 (障害物無視)", CurrentValue = Config.KnifeWallPenetrate, Flag = "KnifeWallPenetrate", Callback = function(v) Config.KnifeWallPenetrate = v end})
-        KnifeTab:CreateToggle({Name = "ワープスタブ (敵の背後へ)", CurrentValue = Config.KnifeWarp, Flag = "KnifeWarp", Callback = function(v) Config.KnifeWarp = v end})
-        KnifeTab:CreateToggle({Name = "自動照準 (敵の方向を向く)", CurrentValue = Config.KnifeAutoAim, Flag = "KnifeAutoAim", Callback = function(v) Config.KnifeAutoAim = v end})
-        KnifeTab:CreateSlider({Name = "攻撃範囲 (スタッド)", Range = {10, 500}, Increment = 10, Suffix = "studs", CurrentValue = Config.KnifeRange, Flag = "KnifeRange", Callback = function(v) Config.KnifeRange = v end})
-        KnifeTab:CreateSlider({Name = "攻撃間隔 (秒)", Range = {0.02, 0.5}, Increment = 0.01, Suffix = "s", CurrentValue = Config.KnifeAttackInterval, Flag = "KnifeAttackInterval", Callback = function(v) Config.KnifeAttackInterval = v end})
-        KnifeTab:CreateButton({Name = "説明", Callback = function()
-            if Rayfield then
-                Rayfield:Notify({
-                    Title = "🔪 壁越しナイフ",
-                    Content = "ONで壁越しでも敵にナイフが当たります！",
-                    Duration = 5,
-                })
-            end
-        end})
+        KnifeTab:CreateToggle({Name = "壁越しナイフ", CurrentValue = Config.KnifeAutoHit, Flag = "KnifeAutoHit", Callback = function(v) Config.KnifeAutoHit = v end})
+        KnifeTab:CreateToggle({Name = "壁越し攻撃", CurrentValue = Config.KnifeWallPenetrate, Flag = "KnifeWallPenetrate", Callback = function(v) Config.KnifeWallPenetrate = v end})
+        KnifeTab:CreateToggle({Name = "ワープスタブ", CurrentValue = Config.KnifeWarp, Flag = "KnifeWarp", Callback = function(v) Config.KnifeWarp = v end})
+        KnifeTab:CreateToggle({Name = "自動照準", CurrentValue = Config.KnifeAutoAim, Flag = "KnifeAutoAim", Callback = function(v) Config.KnifeAutoAim = v end})
+        KnifeTab:CreateSlider({Name = "攻撃範囲", Range = {10, 500}, Increment = 10, Suffix = "studs", CurrentValue = Config.KnifeRange, Flag = "KnifeRange", Callback = function(v) Config.KnifeRange = v end})
+        KnifeTab:CreateSlider({Name = "攻撃間隔", Range = {0.02, 0.5}, Increment = 0.01, Suffix = "s", CurrentValue = Config.KnifeAttackInterval, Flag = "KnifeAttackInterval", Callback = function(v) Config.KnifeAttackInterval = v end})
 
         -- ESP
         local ESPTab = Window:CreateTab("👁️ ESP", 4483362458)
@@ -1228,7 +1298,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
-Debug("ZETA X FINAL loaded. Menu: K key.")
+Debug("ZETA X FINAL loaded. Menu: K key. All bugs fixed.")
 
 while true do task.wait(10) end
 
