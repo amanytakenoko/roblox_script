@@ -1,6 +1,6 @@
 -- ============================================================
 --   ZETA X – ULTIMATE FINAL (完全版・完結)
---   全構文エラー修正 | StarterGui スコープエラー対策済み
+--   SafeNotify 完全エラー対策版
 --   メニューキー: K | ブルーパープルテーマ
 -- ============================================================
 
@@ -24,7 +24,7 @@ local TeleportService = game:GetService("TeleportService")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
-local StarterGui = game:GetService("StarterGui")  -- ★★★ トップレベルで定義 ★★★
+local StarterGui = game:GetService("StarterGui")
 local VirtualUser = game:GetService("VirtualUser")
 
 -- // ローカルプレイヤー
@@ -32,8 +32,6 @@ local LP = Players.LocalPlayer
 
 -- ★★★ 全体をpcallで保護 ★★★
 local function Main()
-
--- // サービス（Main内では再定義せず、トップレベルの変数を使用）
 
 -- ============================================================
 --   ★★★ カメラ取得 ★★★
@@ -67,7 +65,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
---   ★★★ 安全な通知関数 (完全エラー対策) ★★★
+--   ★★★ 安全な通知関数 (完全エラー対策・最終版) ★★★
 -- ============================================================
 local function SafeNotify(title, content, duration)
     -- Rayfield優先
@@ -78,10 +76,11 @@ local function SafeNotify(title, content, duration)
         if ok then return end
     end
 
-    -- フォールバック: StarterGui
+    -- フォールバック1: CoreGui (最も確実な環境が多い)
     local ok, err = pcall(function()
-        if StarterGui then
-            StarterGui:SetCore("SendNotification", {
+        local coreGui = game:GetService("CoreGui")
+        if coreGui and coreGui.SetCore then
+            coreGui:SetCore("SendNotification", {
                 Title = title,
                 Text = content,
                 Duration = duration or 3,
@@ -90,9 +89,25 @@ local function SafeNotify(title, content, duration)
             print("[ZETA X] " .. title .. ": " .. content)
         end
     end)
-    if not ok then
-        print("[ZETA X] " .. title .. ": " .. content)
-    end
+    if ok then return end
+
+    -- フォールバック2: StarterGui
+    local ok2, err2 = pcall(function()
+        local starterGui = game:GetService("StarterGui")
+        if starterGui and starterGui.SetCore then
+            starterGui:SetCore("SendNotification", {
+                Title = title,
+                Text = content,
+                Duration = duration or 3,
+            })
+        else
+            print("[ZETA X] " .. title .. ": " .. content)
+        end
+    end)
+    if ok2 then return end
+
+    -- 最終フォールバック: print
+    print("[ZETA X] " .. title .. ": " .. content)
 end
 
 -- ============================================================
@@ -161,7 +176,7 @@ local Config = {
 }
 
 -- ============================================================
---   ★★★ 全関数を先に定義 (可読性向上) ★★★
+--   ★★★ 全関数を先に定義 ★★★
 -- ============================================================
 
 -- // プロファイル管理
@@ -569,7 +584,7 @@ local function GetClosestTarget()
 end
 
 -- ============================================================
---   ★★★ キャラクターイベント接続 (関数定義後) ★★★
+--   ★★★ キャラクターイベント接続 ★★★
 -- ============================================================
 
 -- 初回取得
@@ -1344,10 +1359,13 @@ local ok, err = pcall(Main)
 if not ok then
     warn("[ZETA X] スクリプト実行エラー: " .. tostring(err))
     pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = "ZETA X",
-            Text = "エラーが発生しましたが、一部機能は動作します",
-            Duration = 5,
-        })
+        local starterGui = game:GetService("StarterGui")
+        if starterGui and starterGui.SetCore then
+            starterGui:SetCore("SendNotification", {
+                Title = "ZETA X",
+                Text = "エラーが発生しましたが、一部機能は動作します",
+                Duration = 5,
+            })
+        end
     end)
 end
