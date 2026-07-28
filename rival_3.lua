@@ -1,6 +1,6 @@
--- ============================================================
+ -- ============================================================
 --   ZETA X – ULTIMATE FINAL (完全版・完結)
---   SafeNotify 完全エラー対策版
+--   SafeNotify 完全フォールバック版 (SetCore不使用)
 --   メニューキー: K | ブルーパープルテーマ
 -- ============================================================
 
@@ -65,7 +65,8 @@ task.spawn(function()
 end)
 
 -- ============================================================
---   ★★★ 安全な通知関数 (完全エラー対策・最終版) ★★★
+--   ★★★ 安全な通知関数 (完全エラー対策・最終決定版) ★★★
+--   CoreGui/StarterGuiのSetCoreは使用しない（環境依存エラー回避）
 -- ============================================================
 local function SafeNotify(title, content, duration)
     -- Rayfield優先
@@ -76,38 +77,8 @@ local function SafeNotify(title, content, duration)
         if ok then return end
     end
 
-    -- フォールバック1: CoreGui (最も確実な環境が多い)
-    local ok, err = pcall(function()
-        local coreGui = game:GetService("CoreGui")
-        if coreGui and coreGui.SetCore then
-            coreGui:SetCore("SendNotification", {
-                Title = title,
-                Text = content,
-                Duration = duration or 3,
-            })
-        else
-            print("[ZETA X] " .. title .. ": " .. content)
-        end
-    end)
-    if ok then return end
-
-    -- フォールバック2: StarterGui
-    local ok2, err2 = pcall(function()
-        local starterGui = game:GetService("StarterGui")
-        if starterGui and starterGui.SetCore then
-            starterGui:SetCore("SendNotification", {
-                Title = title,
-                Text = content,
-                Duration = duration or 3,
-            })
-        else
-            print("[ZETA X] " .. title .. ": " .. content)
-        end
-    end)
-    if ok2 then return end
-
-    -- 最終フォールバック: print
-    print("[ZETA X] " .. title .. ": " .. content)
+    -- フォールバック: コンソール出力 (SetCoreは使用しない)
+    print(string.format("[ZETA X] %s: %s", title, content))
 end
 
 -- ============================================================
@@ -1354,18 +1325,9 @@ while true do task.wait(10) end
 -- ★★★ Main関数終了 ★★★
 end
 
--- ★★★ pcallで実行 (StarterGuiはトップレベルで定義済み) ★★★
+-- ★★★ pcallで実行 ★★★
 local ok, err = pcall(Main)
 if not ok then
     warn("[ZETA X] スクリプト実行エラー: " .. tostring(err))
-    pcall(function()
-        local starterGui = game:GetService("StarterGui")
-        if starterGui and starterGui.SetCore then
-            starterGui:SetCore("SendNotification", {
-                Title = "ZETA X",
-                Text = "エラーが発生しましたが、一部機能は動作します",
-                Duration = 5,
-            })
-        end
-    end)
+    -- エラー時はコンソール出力のみ（通知は行わない）
 end
