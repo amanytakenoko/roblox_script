@@ -1,6 +1,6 @@
 -- ============================================================
---   ZETA X – ULTIMATE FIXED
---   Aimbot FOV Circle 位置修正 | 全バグ修正
+--   ZETA X – ULTIMATE FINAL
+--   マッチ切り替え完全対応 | 全機能永続動作
 --   ブルーパープルテーマ | Rivals専用
 -- ============================================================
 
@@ -21,7 +21,7 @@ local LP = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
 -- ============================================================
---   デバッグ (簡易)
+--   デバッグ
 -- ============================================================
 local function Debug(msg)
     print("[ZETA] " .. tostring(msg))
@@ -138,18 +138,69 @@ pcall(function()
 end)
 
 -- ============================================================
---   グローバル
+--   キャラクター参照 (常に最新に保つ)
 -- ============================================================
 local Character = nil
 local HumanoidRootPart = nil
 local Humanoid = nil
-local ESPObjects = {}
-local FOVCircle = nil
-local LastShot = 0
-local ESPUpdateCounter = 0
-local FlyBV = nil
-local FlyBG = nil
-local FlyActive = false
+
+-- キャラクター更新関数 (必ず最新の参照を取得)
+local function UpdateCharacter()
+    local newChar = LP.Character
+    if newChar then
+        Character = newChar
+        HumanoidRootPart = newChar:FindFirstChild("HumanoidRootPart")
+        Humanoid = newChar:FindFirstChildOfClass("Humanoid")
+        Debug("Character updated")
+        return true
+    end
+    return false
+end
+
+-- 初回取得
+UpdateCharacter()
+
+-- CharacterAddedで確実に更新
+LP.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+    HumanoidRootPart = newChar:FindFirstChild("HumanoidRootPart")
+    Humanoid = newChar:FindFirstChildOfClass("Humanoid")
+    Debug("CharacterAdded: new character")
+    -- ESPオブジェクトをクリア (再構築させる)
+    for pl in pairs(ESPObjects) do Safe(RemoveESP, pl) end
+    -- Fly再起動
+    if Config.FlyEnabled and HumanoidRootPart then
+        Safe(StartFly)
+    end
+    if RayfieldLoaded and Rayfield then
+        Rayfield:Notify({Title = "Match Restart", Content = "All features re-activated", Duration = 2})
+    end
+end)
+
+-- CharacterRemovingでクリア
+LP.CharacterRemoving:Connect(function()
+    Character = nil
+    HumanoidRootPart = nil
+    Humanoid = nil
+    Safe(StopFly)
+    Debug("CharacterRemoving: character lost")
+end)
+
+-- 定期チェック (1秒ごとに更新を試みる)
+spawn(function()
+    while true do
+        wait(1)
+        if not Character or not HumanoidRootPart or not Humanoid then
+            if UpdateCharacter() then
+                Debug("Character recovered by periodic check")
+                -- Fly再起動
+                if Config.FlyEnabled and HumanoidRootPart then
+                    Safe(StartFly)
+                end
+            end
+        end
+    end
+end)
 
 -- ============================================================
 --   セーフコール
@@ -161,50 +212,7 @@ local function Safe(func, ...)
 end
 
 -- ============================================================
---   キャラクター管理
--- ============================================================
-local function RefreshCharacter()
-    local newChar = LP.Character
-    if newChar and newChar ~= Character then
-        Character = newChar
-        HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-        Humanoid = Character:FindFirstChildOfClass("Humanoid")
-        for pl in pairs(ESPObjects) do Safe(RemoveESP, pl) end
-        if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
-        return true
-    end
-    return false
-end
-
-LP.CharacterAdded:Connect(function(newChar)
-    Character = newChar
-    HumanoidRootPart = newChar:FindFirstChild("HumanoidRootPart")
-    Humanoid = newChar:FindFirstChildOfClass("Humanoid")
-    for pl in pairs(ESPObjects) do Safe(RemoveESP, pl) end
-    if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
-    if RayfieldLoaded and Rayfield then
-        Rayfield:Notify({Title = "Match Restart", Content = "Features re-activated", Duration = 2})
-    end
-end)
-
-LP.CharacterRemoving:Connect(function()
-    Character = nil
-    HumanoidRootPart = nil
-    Humanoid = nil
-    Safe(StopFly)
-end)
-
-spawn(function()
-    while true do
-        wait(1)
-        if not Character or not HumanoidRootPart or not Humanoid then
-            Safe(RefreshCharacter)
-        end
-    end
-end)
-
--- ============================================================
---   ユーティリティ
+--   ユーティリティ (Characterがnilでもエラーにならないように)
 -- ============================================================
 local function GetRootPart(pl)
     if not pl then return nil end
@@ -244,16 +252,18 @@ local function WorldToViewport(pos)
 end
 
 local function GetDistance(pl)
+    if not HumanoidRootPart then return math.huge end
     local r = GetRootPart(pl)
-    if r and HumanoidRootPart then
+    if r then
         return (r.Position - HumanoidRootPart.Position).Magnitude
     end
     return math.huge
 end
 
 local function IsVisible(pl)
+    if not Camera then return false end
     local bone = GetBone(pl, Config.AimbotBone)
-    if not bone or not Camera then return false end
+    if not bone then return false end
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Blacklist
     local ignore = {}
@@ -280,144 +290,10 @@ local function IsTarget(pl)
 end
 
 -- ============================================================
---   FOV CIRCLE (位置修正済み)
+--   ESP (Drawing)
 -- ============================================================
-Safe(function()
-    FOVCircle = Drawing.new("Circle")
-    if FOVCircle then
-        FOVCircle.Visible = false
-        FOVCircle.Radius = Config.AimbotFOV
-        FOVCircle.Color = Theme.FOVColor
-        FOVCircle.Thickness = 1.5
-        FOVCircle.Transparency = 0.6
-        FOVCircle.Filled = false
-        FOVCircle.ZIndex = 999
-    end
-end)
+local ESPObjects = {}
 
--- FOV Circle更新 (マウス位置に正しく追従)
-RunService.RenderStepped:Connect(function()
-    if FOVCircle then
-        if Config.AimbotEnabled then
-            local mouse = UserInputService:GetMouseLocation()
-            if mouse then
-                FOVCircle.Position = mouse
-                FOVCircle.Radius = Config.AimbotFOV
-                FOVCircle.Visible = true
-            end
-        else
-            FOVCircle.Visible = false
-        end
-    end
-end)
-
--- ============================================================
---   AIMBOT (完全修正)
--- ============================================================
-local function GetClosestTarget()
-    if not Camera then return nil end
-    local mousePos = UserInputService:GetMouseLocation()
-    if not mousePos then return nil end
-    local minDist = Config.AimbotFOV
-    local target = nil
-    local viewportSize = Camera.ViewportSize
-
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if not IsTarget(pl) then continue end
-        if Config.AimbotVisCheck and not IsVisible(pl) then continue end
-
-        local bone = GetBone(pl, Config.AimbotBone)
-        if not bone then continue end
-
-        local sp, on = WorldToViewport(bone.Position)
-        if not on then continue end
-
-        -- 画面内かチェック
-        if sp.X < 0 or sp.X > viewportSize.X or sp.Y < 0 or sp.Y > viewportSize.Y then
-            continue
-        end
-
-        local dist = (sp - mousePos).Magnitude
-        if dist < minDist then
-            minDist = dist
-            target = pl
-        end
-    end
-    return target
-end
-
--- Aimbot実行
-RunService.RenderStepped:Connect(function()
-    if not Config.AimbotEnabled then return end
-    if not Character or not HumanoidRootPart or not Camera then return end
-
-    local target = GetClosestTarget()
-    if not target then return end
-
-    local bone = GetBone(target, Config.AimbotBone)
-    if not bone then return end
-
-    local targetPos = bone.Position
-    if not targetPos then return end
-
-    if Config.AimbotMode == "Sticky" then
-        -- 吸い付きモード
-        local currentCF = Camera.CFrame
-        local targetCF = CFrame.new(currentCF.Position, targetPos)
-        local strength = Config.AimbotStickyStrength
-        strength = math.clamp(strength, 0.3, 1.0)
-        Camera.CFrame = currentCF:Lerp(targetCF, strength)
-    else
-        -- ノーマルモード (mousemoverel)
-        local sp, on = WorldToViewport(targetPos)
-        if not on then return end
-
-        local mousePos = UserInputService:GetMouseLocation()
-        if not mousePos then return end
-
-        local delta = sp - mousePos
-        local dist = delta.Magnitude
-        if dist < 0.5 then return end
-
-        local maxMove = Config.AimbotMaxAngle * 1.2
-        local smoothFactor = Config.AimbotSmoothing
-        smoothFactor = math.clamp(smoothFactor, 0.01, 0.9)
-
-        local moveX = delta.X * smoothFactor
-        local moveY = delta.Y * smoothFactor
-        local moveMag = math.sqrt(moveX^2 + moveY^2)
-        if moveMag > maxMove then
-            moveX = moveX / moveMag * maxMove
-            moveY = moveY / moveMag * maxMove
-        end
-
-        if math.abs(moveX) > 0.1 or math.abs(moveY) > 0.1 then
-            Safe(function() mousemoverel(moveX, moveY) end)
-        end
-    end
-
-    -- Triggerbot / AutoShoot
-    if Config.AimbotTriggerbot or Config.AimbotAutoShoot then
-        local now = tick()
-        local interval = Config.AimbotTriggerbot and 0.12 or 0.05
-        if now - LastShot > interval then
-            Safe(function()
-                if VirtualUser then
-                    VirtualUser:CaptureController()
-                    VirtualUser:Button1Down(Vector2.new(0, 0))
-                    VirtualUser:Button1Up(Vector2.new(0, 0))
-                else
-                    mouse1click()
-                end
-            end)
-            LastShot = now
-        end
-    end
-end)
-
--- ============================================================
---   ESP (修正)
--- ============================================================
 local function RemoveESP(pl)
     if ESPObjects[pl] then
         for _, obj in pairs(ESPObjects[pl]) do
@@ -462,6 +338,7 @@ local function CreateESP(pl)
     ESPObjects[pl] = objs
 end
 
+local ESPUpdateCounter = 0
 RunService.Heartbeat:Connect(function()
     ESPUpdateCounter = ESPUpdateCounter + 1
     if ESPUpdateCounter % 2 ~= 0 then return end
@@ -470,6 +347,8 @@ RunService.Heartbeat:Connect(function()
         for pl in pairs(ESPObjects) do Safe(RemoveESP, pl) end
         return
     end
+
+    if not Camera then return end
 
     for _, pl in ipairs(Players:GetPlayers()) do
         if pl == LP then continue end
@@ -582,46 +461,194 @@ end)
 Players.PlayerRemoving:Connect(RemoveESP)
 
 -- ============================================================
---   MOVEMENT
+--   FOV Circle
 -- ============================================================
+local FOVCircle = nil
+Safe(function()
+    FOVCircle = Drawing.new("Circle")
+    if FOVCircle then
+        FOVCircle.Visible = false
+        FOVCircle.Radius = Config.AimbotFOV
+        FOVCircle.Color = Theme.FOVColor
+        FOVCircle.Thickness = 1.5
+        FOVCircle.Transparency = 0.6
+        FOVCircle.Filled = false
+        FOVCircle.ZIndex = 999
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if FOVCircle then
+        if Config.AimbotEnabled then
+            local mouse = UserInputService:GetMouseLocation()
+            if mouse then
+                FOVCircle.Position = mouse
+                FOVCircle.Radius = Config.AimbotFOV
+                FOVCircle.Visible = true
+            end
+        else
+            FOVCircle.Visible = false
+        end
+    end
+end)
+
+-- ============================================================
+--   AIMBOT (常にCharacterを参照)
+-- ============================================================
+local function GetClosestTarget()
+    if not Camera then return nil end
+    if not HumanoidRootPart then return nil end  -- キャラクターがなければ処理しない
+    local mousePos = UserInputService:GetMouseLocation()
+    if not mousePos then return nil end
+    local minDist = Config.AimbotFOV
+    local target = nil
+    local viewportSize = Camera.ViewportSize
+
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if not IsTarget(pl) then continue end
+        if Config.AimbotVisCheck and not IsVisible(pl) then continue end
+
+        local bone = GetBone(pl, Config.AimbotBone)
+        if not bone then continue end
+
+        local sp, on = WorldToViewport(bone.Position)
+        if not on then continue end
+        if sp.X < 0 or sp.X > viewportSize.X or sp.Y < 0 or sp.Y > viewportSize.Y then
+            continue
+        end
+
+        local dist = (sp - mousePos).Magnitude
+        if dist < minDist then
+            minDist = dist
+            target = pl
+        end
+    end
+    return target
+end
+
+local LastShot = 0
+RunService.RenderStepped:Connect(function()
+    if not Config.AimbotEnabled then return end
+    if not Character or not HumanoidRootPart or not Camera then return end
+
+    local target = GetClosestTarget()
+    if not target then return end
+
+    local bone = GetBone(target, Config.AimbotBone)
+    if not bone then return end
+
+    local targetPos = bone.Position
+    if not targetPos then return end
+
+    if Config.AimbotMode == "Sticky" then
+        local currentCF = Camera.CFrame
+        local targetCF = CFrame.new(currentCF.Position, targetPos)
+        local strength = math.clamp(Config.AimbotStickyStrength, 0.3, 1.0)
+        Camera.CFrame = currentCF:Lerp(targetCF, strength)
+    else
+        local sp, on = WorldToViewport(targetPos)
+        if not on then return end
+
+        local mousePos = UserInputService:GetMouseLocation()
+        if not mousePos then return end
+
+        local delta = sp - mousePos
+        local dist = delta.Magnitude
+        if dist < 0.5 then return end
+
+        local maxMove = Config.AimbotMaxAngle * 1.2
+        local smoothFactor = math.clamp(Config.AimbotSmoothing, 0.01, 0.9)
+
+        local moveX = delta.X * smoothFactor
+        local moveY = delta.Y * smoothFactor
+        local moveMag = math.sqrt(moveX^2 + moveY^2)
+        if moveMag > maxMove then
+            moveX = moveX / moveMag * maxMove
+            moveY = moveY / moveMag * maxMove
+        end
+
+        if math.abs(moveX) > 0.1 or math.abs(moveY) > 0.1 then
+            Safe(function() mousemoverel(moveX, moveY) end)
+        end
+    end
+
+    -- Triggerbot / AutoShoot
+    if Config.AimbotTriggerbot or Config.AimbotAutoShoot then
+        local now = tick()
+        local interval = Config.AimbotTriggerbot and 0.12 or 0.05
+        if now - LastShot > interval then
+            Safe(function()
+                if VirtualUser then
+                    VirtualUser:CaptureController()
+                    VirtualUser:Button1Down(Vector2.new(0, 0))
+                    VirtualUser:Button1Up(Vector2.new(0, 0))
+                else
+                    mouse1click()
+                end
+            end)
+            LastShot = now
+        end
+    end
+end)
+
+-- ============================================================
+--   MOVEMENT (すべてCharacterが存在するかチェック)
+-- ============================================================
+
+-- Speed
 RunService.Heartbeat:Connect(function()
-    if Config.SpeedEnabled and Humanoid and HumanoidRootPart and Humanoid.MoveDirection.Magnitude > 0 then
+    if not Config.SpeedEnabled then return end
+    if not Humanoid or not HumanoidRootPart then return end
+    if Humanoid.MoveDirection.Magnitude > 0 then
         Safe(function()
             HumanoidRootPart.Velocity = Humanoid.MoveDirection * Config.SpeedValue + Vector3.new(0, HumanoidRootPart.Velocity.Y, 0)
         end)
     end
 end)
 
+-- Infinite Jump
 UserInputService.JumpRequest:Connect(function()
     if Config.InfiniteJump and Humanoid then
         Safe(function() Humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end)
     end
 end)
 
+-- Bunny Hop
 RunService.Heartbeat:Connect(function()
     if Config.BunnyHop and Humanoid and Humanoid:GetState() == Enum.HumanoidStateType.Landed then
         Safe(function() Humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end)
     end
 end)
 
+-- Noclip
 RunService.Stepped:Connect(function()
-    if Config.NoclipEnabled and Character then
-        for _, part in ipairs(Character:GetDescendants()) do
-            if part:IsA("BasePart") and part.CanCollide then
-                Safe(function() part.CanCollide = false end)
-            end
+    if not Config.NoclipEnabled then return end
+    if not Character then return end
+    for _, part in ipairs(Character:GetDescendants()) do
+        if part:IsA("BasePart") and part.CanCollide then
+            Safe(function() part.CanCollide = false end)
         end
     end
 end)
 
 -- ============================================================
---   FLY (完全修正)
+--   FLY (完全修正 + キャラクター再取得対応)
 -- ============================================================
+local FlyBV = nil
+local FlyBG = nil
+local FlyActive = false
+
 function StartFly()
     Safe(StopFly)
-    if not Character or not HumanoidRootPart then return false end
+    if not Character or not HumanoidRootPart then
+        Debug("StartFly: No character/root")
+        return false
+    end
     local hum = Character:FindFirstChildOfClass("Humanoid")
-    if not hum then return false end
+    if not hum then
+        Debug("StartFly: No humanoid")
+        return false
+    end
 
     local bv = Instance.new("BodyVelocity")
     bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
@@ -637,23 +664,36 @@ function StartFly()
 
     hum.PlatformStand = true
     FlyActive = true
+    Debug("Fly started")
     return true
 end
 
 function StopFly()
     if FlyBV then Safe(function() FlyBV:Destroy() end); FlyBV = nil end
     if FlyBG then Safe(function() FlyBG:Destroy() end); FlyBG = nil end
-    if Character and Humanoid then Safe(function() Humanoid.PlatformStand = false end) end
+    if Character and Humanoid then
+        Safe(function() Humanoid.PlatformStand = false end)
+    end
     FlyActive = false
+    Debug("Fly stopped")
 end
 
+-- Fly更新 (Characterが変わっても動作)
 RunService.RenderStepped:Connect(function()
     if not Config.FlyEnabled then
         if FlyActive then Safe(StopFly) end
         return
     end
 
-    if (not FlyBV or not FlyBV.Parent) and HumanoidRootPart and Character then
+    -- キャラクターが存在しない場合、再取得を試みる
+    if not Character or not HumanoidRootPart then
+        if not UpdateCharacter() then
+            return
+        end
+    end
+
+    -- Flyオブジェクトがない場合は再作成
+    if (not FlyBV or not FlyBV.Parent) and HumanoidRootPart then
         Safe(StartFly)
         if not FlyBV or not FlyBV.Parent then return end
     end
@@ -680,7 +720,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   COMBAT
+--   COMBAT (KillAura, AutoHeal)
 -- ============================================================
 local function GetHitRemote()
     local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:FindFirstChild("RemoteEvents")
@@ -721,6 +761,7 @@ end)
 --   TELEPORT
 -- ============================================================
 local function TeleportToTarget()
+    if not HumanoidRootPart then return end
     local target = nil
     local minDist = math.huge
     for _, pl in ipairs(Players:GetPlayers()) do
@@ -733,16 +774,14 @@ local function TeleportToTarget()
         end
     end
     if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-        if HumanoidRootPart then
-            Safe(function()
-                HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0, 2, 0)
-            end)
-        end
+        Safe(function()
+            HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0, 2, 0)
+        end)
     end
 end
 
 -- ============================================================
---   MISC
+--   MISC (AntiAFK, NoFog, FullBright)
 -- ============================================================
 LP.Idled:Connect(function()
     if Config.AntiAFK then
@@ -828,7 +867,7 @@ if RayfieldLoaded and Rayfield then
             Name = "ZETA X",
             Icon = 0,
             LoadingTitle = "ZETA X",
-            LoadingSubtitle = "Ultimate Fixed",
+            LoadingSubtitle = "Ultimate Final",
             Theme = "Default",
             ConfigurationSaving = { Enabled = false },
             KeySystem = false,
@@ -959,16 +998,16 @@ if RayfieldLoaded and Rayfield then
         MiscTab:CreateButton({Name = "Respawn", Callback = function() LP:LoadCharacter() end})
 
         Rayfield:Notify({
-            Title = "💙💜 ZETA X",
-            Content = "All bugs fixed | Insert to hide",
+            Title = "💙💜 ZETA X FINAL",
+            Content = "Match-switch stable | All features persistent",
             Duration = 5,
         })
     end
 else
     pcall(function()
         CoreGui:SetCore("SendNotification", {
-            Title = "ZETA X",
-            Text = "Loaded | All features fixed",
+            Title = "ZETA X FINAL",
+            Text = "Loaded | Match-switch stable",
             Duration = 5,
         })
     end)
@@ -986,10 +1025,9 @@ UserInputService.InputBegan:Connect(function(input)
 end)
 
 -- ============================================================
---   初期化
+--   初期化完了
 -- ============================================================
-Safe(RefreshCharacter)
-Debug("ZETA X ULTIMATE FIXED loaded.")
-Debug("Insert toggles menu.")
+Debug("ZETA X FINAL loaded. Insert toggles menu.")
+Debug("All features persistent across matches.")
 
 while true do wait(10) end
