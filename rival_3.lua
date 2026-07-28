@@ -1,5 +1,5 @@
 -- ============================================================
---   ZETA X – ULTIMATE FINAL (完全安定版)
+--   ZETA X – ULTIMATE FINAL (完全安定版・エラー修正)
 --   Rayfield確実ロード | マッチ切り替え完全対応
 --   壁越しナイフ | メニューキー: K
 -- ============================================================
@@ -17,7 +17,7 @@ end
 -- ★★★ 全体をpcallで保護 ★★★
 local function Main()
 
--- // サービス
+-- // サービス (確実に取得)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -32,17 +32,19 @@ local VirtualUser = game:GetService("VirtualUser")
 -- // ローカルプレイヤー
 local LP = Players.LocalPlayer
 
--- ★★★ Camera を毎フレーム取得するように変更 ★★★
+-- ★★★ Camera を安全に取得 ★★★
 local function GetCamera()
-    return Workspace.CurrentCamera
+    if Workspace then
+        return Workspace.CurrentCamera
+    end
+    return nil
 end
 
 -- ============================================================
---   ★★★ RAYFIELD UI (リトライ付き) ★★★
+--   ★★★ RAYFIELD UI (リトライ付き・エラー保護) ★★★
 -- ============================================================
 local Rayfield = nil
 local RayfieldLoaded = false
-local RayfieldRetryCount = 0
 
 local function LoadRayfield()
     local success, result = pcall(function()
@@ -62,7 +64,7 @@ end
 -- 初回ロード
 LoadRayfield()
 
--- 失敗したら3秒後にリトライ
+-- 失敗したらリトライ
 if not RayfieldLoaded then
     task.spawn(function()
         for i = 1, 3 do
@@ -70,6 +72,23 @@ if not RayfieldLoaded then
             if LoadRayfield() then break end
         end
     end)
+end
+
+-- ★★★ 安全な通知関数 ★★★
+local function SafeNotify(title, content, duration)
+    if Rayfield and RayfieldLoaded then
+        pcall(function()
+            Rayfield:Notify({Title = title, Content = content, Duration = duration or 3})
+        end)
+    else
+        pcall(function()
+            CoreGui:SetCore("SendNotification", {
+                Title = title,
+                Text = content,
+                Duration = duration or 3,
+            })
+        end)
+    end
 end
 
 -- ============================================================
@@ -168,9 +187,7 @@ local function SaveProfile(name)
         if makefolder then makefolder(PROFILES_DIR) end
         if writefile then writefile(GetProfilePath(name), HttpService:JSONEncode(Config)) end
     end)
-    if RayfieldLoaded and Rayfield then
-        Rayfield:Notify({Title = "Saved", Content = name, Duration = 2})
-    end
+    SafeNotify("Profile Saved", name, 2)
 end
 
 local function GetProfileList()
@@ -196,7 +213,7 @@ pcall(function()
 end)
 
 -- ============================================================
---   ★★★ キャラクター参照 (完全再取得) ★★★
+--   ★★★ キャラクター参照 ★★★
 -- ============================================================
 local Character = nil
 local HumanoidRootPart = nil
@@ -221,7 +238,6 @@ local function RefreshCharacter()
     HumanoidRootPart = GetHumanoidRootPart()
     Humanoid = GetHumanoidObj()
     if Character then
-        Debug("Character refreshed: " .. tostring(Character))
         return true
     end
     return false
@@ -232,32 +248,23 @@ RefreshCharacter()
 
 -- CharacterAddedで更新
 LP.CharacterAdded:Connect(function(newChar)
-    Debug("CharacterAdded event")
     Character = newChar
     HumanoidRootPart = newChar:FindFirstChild("HumanoidRootPart")
     Humanoid = newChar:FindFirstChildOfClass("Humanoid")
-    -- ESPクリア
     ClearAllESP()
-    -- Noclip再設定
     SetupNoclipWatcher(Character)
-    -- 初回Noclip適用
     if Character then
         for _, part in ipairs(Character:GetDescendants()) do
             ApplyNoclipToPart(part)
         end
     end
-    -- Fly再起動
     if Config.FlyEnabled and HumanoidRootPart then Safe(StartFly) end
-    -- キャッシュクリア
     CachedTarget = nil
     CachedTargetTime = 0
-    if RayfieldLoaded and Rayfield then
-        Rayfield:Notify({Title = "Match Restart", Content = "All features re-activated", Duration = 2})
-    end
+    SafeNotify("Match Restart", "All features re-activated", 2)
 end)
 
 LP.CharacterRemoving:Connect(function()
-    Debug("CharacterRemoving event")
     Character = nil
     HumanoidRootPart = nil
     Humanoid = nil
@@ -269,13 +276,12 @@ LP.CharacterRemoving:Connect(function()
     NoclipCachedParts = {}
 end)
 
--- ★★★ 定期チェック (0.3秒ごと、より頻繁に) ★★★
+-- 定期チェック
 task.spawn(function()
     while true do
         task.wait(0.3)
         local currentChar = GetCharacter()
         if currentChar ~= Character then
-            Debug("Periodic: character changed")
             RefreshCharacter()
             if Character then
                 SetupNoclipWatcher(Character)
@@ -283,15 +289,10 @@ task.spawn(function()
                 CachedTarget = nil
             end
         end
-        -- HumanoidRootPartがnilの場合の再取得
         if Character and not HumanoidRootPart then
             HumanoidRootPart = GetHumanoidRootPart()
             Humanoid = GetHumanoidObj()
-            if HumanoidRootPart and Humanoid then
-                Debug("Periodic: recovered root/humanoid")
-            end
         end
-        -- Fly PlatformStand解除漏れ防止
         if Character and Humanoid and not Config.FlyEnabled then
             if Humanoid.PlatformStand then
                 Safe(function() Humanoid.PlatformStand = false end)
@@ -305,12 +306,12 @@ end)
 -- ============================================================
 local function Safe(func, ...)
     local ok, err = pcall(func, ...)
-    if not ok then Debug("Error: " .. tostring(err)) end
+    if not ok then print("[ZETA X] Error: " .. tostring(err)) end
     return ok, err
 end
 
 -- ============================================================
---   ユーティリティ (常に最新の参照を取得)
+--   ユーティリティ
 -- ============================================================
 local function GetRootPart(pl)
     if not pl then return nil end
@@ -395,7 +396,7 @@ local function IsTarget(pl)
 end
 
 -- ============================================================
---   AIMBOT (キャッシュ付き)
+--   AIMBOT
 -- ============================================================
 local CachedTarget = nil
 local CachedTargetTime = 0
@@ -407,7 +408,6 @@ local KillAuraLastTime = 0
 local KnifeLastAttack = 0
 
 local function GetClosestTarget()
-    -- キャラクターが無効ならキャッシュクリア
     if not Character or not HumanoidRootPart then
         CachedTarget = nil
         return nil
@@ -461,7 +461,7 @@ local function GetClosestTarget()
 end
 
 -- ============================================================
---   ★★★ 壁越しナイフ ★★★
+--   壁越しナイフ
 -- ============================================================
 local function GetClosestEnemyForKnife()
     if not HumanoidRootPart then return nil end
@@ -538,12 +538,8 @@ RunService.Heartbeat:Connect(function()
             KnifeRemoteSearched = true
             KnifeRemoteSearchTimer = tick()
             KnifeRemote = FindKnifeRemote()
-            if KnifeRemote and RayfieldLoaded and Rayfield then
-                Rayfield:Notify({
-                    Title = "🔪 Knife Remote Found",
-                    Content = "Wall penetration active!",
-                    Duration = 3,
-                })
+            if KnifeRemote then
+                SafeNotify("🔪 Knife Remote Found", "Wall penetration active!", 3)
             end
         end
 
@@ -581,7 +577,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ AIMBOT メインループ (Camera再取得対応) ★★★
+--   AIMBOT メインループ
 -- ============================================================
 RunService.RenderStepped:Connect(function()
     if not Config.AimbotEnabled then return end
@@ -658,7 +654,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ FOV Circle (Camera再取得) ★★★
+--   FOV Circle
 -- ============================================================
 local FOVCircle = nil
 Safe(function()
@@ -690,7 +686,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ ESP (Camera再取得 + Characterチェック強化) ★★★
+--   ★★★ ESP ★★★
 -- ============================================================
 local ESPObjects = {}
 local ESPUpdateCounter = 0
@@ -713,7 +709,6 @@ local function ClearAllESP()
         Safe(RemoveESP, pl)
     end
     ESPObjects = {}
-    Debug("All ESP cleared")
 end
 
 local function CreateESP(pl)
@@ -873,7 +868,7 @@ end)
 Players.PlayerRemoving:Connect(RemoveESP)
 
 -- ============================================================
---   MOVEMENT (Character再取得対応)
+--   MOVEMENT
 -- ============================================================
 RunService.Heartbeat:Connect(function()
     if not Config.SpeedEnabled then return end
@@ -898,7 +893,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ NOCLIP (軽量化) ★★★
+--   NOCLIP
 -- ============================================================
 local NoclipCachedParts = {}
 local NoclipConnection = nil
@@ -928,12 +923,10 @@ local function SetupNoclipWatcher(char)
     end)
 end
 
--- 初回設定
 if Character then
     SetupNoclipWatcher(Character)
 end
 
--- 簡易チェック (Noclip有効時のみ既存パーツを再確認、負荷軽減のため3秒ごと)
 task.spawn(function()
     while true do
         task.wait(3)
@@ -946,7 +939,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
---   FLY (Character再取得対応)
+--   FLY
 -- ============================================================
 local FlyBV = nil
 local FlyBG = nil
@@ -1084,12 +1077,8 @@ RunService.Heartbeat:Connect(function()
                     break
                 end
             end
-            if not HealRemote and RayfieldLoaded and Rayfield then
-                Rayfield:Notify({
-                    Title = "AutoHeal",
-                    Content = "Heal remote not found (retry in 10s)",
-                    Duration = 3,
-                })
+            if not HealRemote then
+                SafeNotify("AutoHeal", "Heal remote not found (retry in 10s)", 3)
             end
         end
 
@@ -1165,14 +1154,18 @@ LP.Idled:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ RAYFIELD UI (確実に動作するように) ★★★
+--   ★★★ RAYFIELD UI (エラー対策) ★★★
 -- ============================================================
 local Window = nil
+local WindowCreated = false
+
 local function CreateUI()
     if not RayfieldLoaded or not Rayfield then
         print("[ZETA X] Rayfield not loaded, skipping UI")
         return false
     end
+
+    if WindowCreated then return true end
 
     local success, err = pcall(function()
         Window = Rayfield:CreateWindow({
@@ -1186,12 +1179,12 @@ local function CreateUI()
         })
     end)
 
-    if not success then
-        print("[ZETA X] Rayfield CreateWindow failed: " .. tostring(err))
+    if not success or not Window then
+        print("[ZETA X] UI creation failed: " .. tostring(err))
         return false
     end
 
-    if not Window then return false end
+    WindowCreated = true
 
     -- Profiles
     local ProfileTab = Window:CreateTab("💾 Profiles", 4483362458)
@@ -1200,32 +1193,32 @@ local function CreateUI()
     ProfileTab:CreateButton({Name = "Save", Callback = function()
         if ProfileNameInput and ProfileNameInput ~= "" then
             SaveProfile(ProfileNameInput)
-        elseif Rayfield then
-            Rayfield:Notify({Title = "Error", Content = "Enter name", Duration = 2})
+        else
+            SafeNotify("Error", "Enter a name", 2)
         end
     end})
     ProfileTab:CreateButton({Name = "Load", Callback = function()
         if ProfileNameInput and ProfileNameInput ~= "" then
             if LoadProfile(ProfileNameInput) then
-                if Rayfield then Rayfield:Notify({Title = "Loaded", Content = ProfileNameInput, Duration = 2}) end
-            elseif Rayfield then
-                Rayfield:Notify({Title = "Error", Content = "Not found", Duration = 2})
+                SafeNotify("Loaded", ProfileNameInput, 2)
+            else
+                SafeNotify("Error", "Profile not found", 2)
             end
         end
     end})
     ProfileTab:CreateButton({Name = "Delete", Callback = function()
         if ProfileNameInput and ProfileNameInput ~= "" and ProfileNameInput ~= "Default" then
             Safe(function() if delfile then delfile(GetProfilePath(ProfileNameInput)) end end)
-            if Rayfield then Rayfield:Notify({Title = "Deleted", Content = ProfileNameInput, Duration = 2}) end
+            SafeNotify("Deleted", ProfileNameInput, 2)
         end
     end})
     ProfileTab:CreateButton({Name = "Refresh List", Callback = function()
         local list = GetProfileList()
-        if Rayfield then Rayfield:Notify({Title = "Profiles", Content = table.concat(list, ", "), Duration = 4}) end
+        SafeNotify("Profiles", table.concat(list, ", "), 4)
     end})
     ProfileTab:CreateButton({Name = "Load Default", Callback = function()
         LoadProfile("Default")
-        if Rayfield then Rayfield:Notify({Title = "Loaded", Content = "Default", Duration = 2}) end
+        SafeNotify("Loaded", "Default", 2)
     end})
 
     -- Aimbot
@@ -1290,28 +1283,22 @@ local function CreateUI()
     MiscTab:CreateButton({Name = "Rejoin", Callback = function() TeleportService:Teleport(game.PlaceId, LP) end})
     MiscTab:CreateButton({Name = "Respawn", Callback = function() LP:LoadCharacter() end})
 
-    Rayfield:Notify({
-        Title = "💙💜 ZETA X FINAL",
-        Content = "完全安定版 | メニュー: Kキー",
-        Duration = 5,
-    })
-
+    SafeNotify("💙💜 ZETA X FINAL", "完全安定版 | メニュー: Kキー", 5)
     return true
 end
 
 -- ★★★ UI作成 (リトライ付き) ★★★
 local function CreateUIWithRetry()
-    local success = CreateUI()
-    if not success then
-        print("[ZETA X] UI creation failed, retrying in 5 seconds...")
-        task.spawn(function()
-            task.wait(5)
-            CreateUI()
-        end)
-    end
+    if CreateUI() then return end
+    task.spawn(function()
+        for i = 1, 5 do
+            task.wait(3)
+            if CreateUI() then break end
+        end
+    end)
 end
 
--- 実行 (Rayfieldロードを待ってから)
+-- 実行
 if RayfieldLoaded then
     CreateUIWithRetry()
 else
@@ -1335,7 +1322,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
-Debug("ZETA X FINAL loaded. Menu: K key. Fully stable.")
+print("[ZETA X] FINAL loaded. Menu: K key. Fully stable.")
 
 while true do task.wait(10) end
 
