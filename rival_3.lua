@@ -63,19 +63,31 @@ task.spawn(function()
     end
 end)
 
+-- ============================================================
+--   ★★★ 安全な通知関数 (完全エラー対策) ★★★
+-- ============================================================
 local function SafeNotify(title, content, duration)
     if Rayfield and RayfieldLoaded then
-        pcall(function()
+        local ok, err = pcall(function()
             Rayfield:Notify({Title = title, Content = content, Duration = duration or 3})
         end)
-    else
-        pcall(function()
-            CoreGui:SetCore("SendNotification", {
+        if ok then return end
+    end
+
+    local ok, err = pcall(function()
+        local coreGui = game:GetService("CoreGui")
+        if coreGui then
+            coreGui:SetCore("SendNotification", {
                 Title = title,
                 Text = content,
                 Duration = duration or 3,
             })
-        end)
+        else
+            print("[ZETA X] " .. title .. ": " .. content)
+        end
+    end)
+    if not ok then
+        print("[ZETA X] " .. title .. ": " .. content)
     end
 end
 
@@ -777,13 +789,11 @@ RunService.RenderStepped:Connect(function()
         local currentCF = cam.CFrame
         local targetCF = CFrame.new(currentCF.Position, targetPos)
 
-        -- 角度制限 (Sticky安定化)
         local relative = targetCF:ToObjectSpace(currentCF)
         local angles = relative:ToEulerAnglesXYZ()
         local maxAngle = math.rad(Config.AimbotMaxAnglePerFrame or 5)
         local strength = Config.AimbotStickyStrength
 
-        -- 角度差が大きい場合は制限をかける
         local angleMag = math.sqrt(angles[1]^2 + angles[2]^2 + angles[3]^2)
         if angleMag > maxAngle then
             local limitedCF = currentCF * CFrame.fromOrientation(
@@ -1314,8 +1324,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if input.KeyCode == Enum.KeyCode.K then
         if Window then
             Window.Visible = not Window.Visible
-        elseif RayfieldLoaded then
-            SafeNotify("ZETA X", "Loading menu...", 2)
         end
     end
 end)
