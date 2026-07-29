@@ -1,3 +1,10 @@
+-- ============================================================
+--   ZETA X – XENO COMPATIBLE (本格UI搭載版)
+--   Rivals専用 完全安定版チート
+--   メニューキー: K | 起動時自動表示
+--   本格的な代替UI搭載 | Xeno完全対応
+-- ============================================================
+
 -- ★★★ ゲームロード待機 ★★★
 if not game:IsLoaded() then
     game.Loaded:Wait()
@@ -14,6 +21,7 @@ local Lighting = game:GetService("Lighting")
 local CoreGui = game:GetService("CoreGui")
 local VirtualUser = game:GetService("VirtualUser")
 local StarterGui = game:GetService("StarterGui")
+local TweenService = game:GetService("TweenService")
 
 -- // ローカルプレイヤー
 local LP = Players.LocalPlayer
@@ -22,57 +30,47 @@ local LP = Players.LocalPlayer
 local function Main()
 
 -- ============================================================
---   ★★★ RAYFIELD UI (確実ロード版) ★★★
+--   ★★★ RAYFIELD UI (優先) ★★★
 -- ============================================================
 local Rayfield = nil
 local RayfieldLoaded = false
+local UseFallbackUI = false
 
--- 強制ロード (失敗したらリトライ)
 local function LoadRayfield()
-    for i = 1, 10 do
+    local urls = {
+        "https://sirius.menu/rayfield",
+        "https://raw.githubusercontent.com/shlexware/Rayfield/main/source.lua",
+    }
+    for _, url in ipairs(urls) do
         local success, result = pcall(function()
-            return loadstring(game:HttpGet("https://sirius.menu/rayfield", true))()
+            return loadstring(game:HttpGet(url, true))()
         end)
         if success and result then
             Rayfield = result
             RayfieldLoaded = true
-            print("[ZETA X] Rayfield loaded successfully")
+            print("[ZETA X] Rayfield loaded")
             return true
         end
-        print("[ZETA X] Rayfield load attempt " .. i .. " failed, retrying...")
-        task.wait(2)
     end
-    print("[ZETA X] Rayfield could not be loaded")
+    print("[ZETA X] Rayfield failed, using built-in UI")
+    UseFallbackUI = true
     return false
 end
 
--- 同期的にロード（確実に）
 LoadRayfield()
 
-local function Notify(title, content)
-    if Rayfield and RayfieldLoaded then
-        pcall(function() Rayfield:Notify({Title = title, Content = content, Duration = 3}) end)
-    else
-        pcall(function()
-            StarterGui:SetCore("SendNotification", {
-                Title = title,
-                Text = content,
-                Duration = 3,
-            })
-        end)
-    end
-end
-
 -- ============================================================
---   テーマ
+--   ★★★ テーマ ★★★
 -- ============================================================
 local Theme = {
+    Background = Color3.fromRGB(10, 10, 30),
     Accent = Color3.fromRGB(100, 60, 200),
+    Accent2 = Color3.fromRGB(60, 120, 255),
+    Text = Color3.fromRGB(200, 180, 255),
+    TextBright = Color3.fromRGB(255, 255, 255),
+    SubText = Color3.fromRGB(150, 140, 200),
     ESPEnemy = Color3.fromRGB(220, 50, 50),
     ESPAlly = Color3.fromRGB(50, 220, 80),
-    HealthHigh = Color3.fromRGB(60, 220, 100),
-    HealthMid = Color3.fromRGB(255, 200, 40),
-    HealthLow = Color3.fromRGB(255, 60, 60),
 }
 
 -- ============================================================
@@ -159,7 +157,7 @@ end
 
 local function WorldToViewport(pos)
     local cam = GetCamera()
-    if not cam then return Vector2.new(0,0), false end
+    if not cam then return Vector2.new(0,0), false
     local sp, on = cam:WorldToViewportPoint(pos)
     if sp.Z <= 0 then return Vector2.new(sp.X, sp.Y), false
     return Vector2.new(sp.X, sp.Y), on
@@ -217,7 +215,418 @@ local function SafeMouseClick()
 end
 
 -- ============================================================
---   ESP (continue完全排除・距離連動)
+--   ★★★ 本格的な代替UI ★★★
+-- ============================================================
+local FallbackUI = nil
+local FallbackWindow = nil
+local MenuVisible = true
+
+local function CreateFallbackUI()
+    if FallbackUI then return FallbackUI end
+    
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "ZetaX_GUI"
+    gui.ResetOnSpawn = false
+    gui.Parent = CoreGui
+    
+    -- メインウィンドウ
+    local main = Instance.new("Frame")
+    main.Name = "MainWindow"
+    main.Size = UDim2.new(0, 420, 0, 520)
+    main.Position = UDim2.new(0.5, -210, 0.5, -260)
+    main.BackgroundColor3 = Theme.Background
+    main.BackgroundTransparency = 0.08
+    main.BorderSizePixel = 0
+    main.ClipsDescendants = true
+    main.Parent = gui
+    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+    
+    -- アウトライン
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Theme.Accent
+    stroke.Thickness = 2
+    stroke.Transparency = 0.3
+    stroke.Parent = main
+    
+    -- タイトルバー (ドラッグ可能)
+    local titleBar = Instance.new("Frame")
+    titleBar.Size = UDim2.new(1, 0, 0, 40)
+    titleBar.BackgroundColor3 = Theme.Accent
+    titleBar.BackgroundTransparency = 0.2
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = main
+    Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 12)
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(0.8, 0, 1, 0)
+    title.Position = UDim2.new(0, 15, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "💜 ZETA X"
+    title.TextColor3 = Theme.TextBright
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 20
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = titleBar
+    
+    -- 閉じるボタン
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 32, 0, 32)
+    closeBtn.Position = UDim2.new(1, -38, 0, 4)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 16
+    closeBtn.Parent = titleBar
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
+    closeBtn.MouseButton1Click:Connect(function()
+        MenuVisible = not MenuVisible
+        main.Visible = MenuVisible
+    end)
+    
+    -- タブシステム
+    local tabBar = Instance.new("Frame")
+    tabBar.Size = UDim2.new(1, 0, 0, 36)
+    tabBar.Position = UDim2.new(0, 0, 0, 40)
+    tabBar.BackgroundColor3 = Color3.fromRGB(20, 20, 40)
+    tabBar.BackgroundTransparency = 0.3
+    tabBar.BorderSizePixel = 0
+    tabBar.Parent = main
+    
+    local tabs = {"Aimbot", "ESP", "Movement", "Combat", "Misc"}
+    local tabButtons = {}
+    local currentTab = "Aimbot"
+    local contentArea = Instance.new("ScrollingFrame")
+    contentArea.Size = UDim2.new(1, -20, 1, -100)
+    contentArea.Position = UDim2.new(0, 10, 0, 82)
+    contentArea.BackgroundTransparency = 1
+    contentArea.BorderSizePixel = 0
+    contentArea.ScrollBarThickness = 4
+    contentArea.Parent = main
+    
+    local contentLayout = Instance.new("UIListLayout")
+    contentLayout.Parent = contentArea
+    contentLayout.Padding = UDim.new(0, 6)
+    
+    -- タブボタン作成
+    for i, name in ipairs(tabs) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.2, -2, 1, -4)
+        btn.Position = UDim2.new((i-1) * 0.2, 2, 0, 2)
+        btn.BackgroundColor3 = (i == 1) and Theme.Accent or Color3.fromRGB(40, 40, 60)
+        btn.BackgroundTransparency = (i == 1) and 0.2 or 0.5
+        btn.Text = name
+        btn.TextColor3 = (i == 1) and Theme.TextBright or Theme.SubText
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 12
+        btn.Parent = tabBar
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+        
+        tabButtons[name] = btn
+        btn.MouseButton1Click:Connect(function()
+            for _, b in pairs(tabButtons) do
+                b.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+                b.BackgroundTransparency = 0.5
+                b.TextColor3 = Theme.SubText
+            end
+            btn.BackgroundColor3 = Theme.Accent
+            btn.BackgroundTransparency = 0.2
+            btn.TextColor3 = Theme.TextBright
+            currentTab = name
+            UpdateContent()
+        end)
+    end
+    
+    -- トグル作成関数
+    local function AddToggle(label, key, default)
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(1, 0, 0, 36)
+        frame.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+        frame.BackgroundTransparency = 0.3
+        frame.Parent = contentArea
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+        
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0.6, 0, 1, 0)
+        lbl.Position = UDim2.new(0, 12, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = label
+        lbl.TextColor3 = Theme.Text
+        lbl.Font = Enum.Font.Gotham
+        lbl.TextSize = 13
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = frame
+        
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 52, 0, 26)
+        btn.Position = UDim2.new(1, -62, 0, 5)
+        btn.BackgroundColor3 = default and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(60, 60, 80)
+        btn.Text = default and "ON" or "OFF"
+        btn.TextColor3 = Color3.fromRGB(255,255,255)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 10
+        btn.Parent = frame
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+        
+        local state = default
+        btn.MouseButton1Click:Connect(function()
+            state = not state
+            Config[key] = state
+            btn.Text = state and "ON" or "OFF"
+            btn.BackgroundColor3 = state and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(60, 60, 80)
+        end)
+        return frame
+    end
+    
+    -- スライダー作成関数
+    local function AddSlider(label, key, min, max, default, suffix)
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(1, 0, 0, 46)
+        frame.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+        frame.BackgroundTransparency = 0.3
+        frame.Parent = contentArea
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+        
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0.6, 0, 0, 20)
+        lbl.Position = UDim2.new(0, 12, 0, 2)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = label
+        lbl.TextColor3 = Theme.Text
+        lbl.Font = Enum.Font.Gotham
+        lbl.TextSize = 12
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = frame
+        
+        local valLbl = Instance.new("TextLabel")
+        valLbl.Size = UDim2.new(0.3, 0, 0, 20)
+        valLbl.Position = UDim2.new(0.7, 0, 0, 2)
+        valLbl.BackgroundTransparency = 1
+        valLbl.Text = tostring(default) .. (suffix or "")
+        valLbl.TextColor3 = Theme.Accent2
+        valLbl.Font = Enum.Font.GothamBold
+        valLbl.TextSize = 12
+        valLbl.TextXAlignment = Enum.TextXAlignment.Right
+        valLbl.Parent = frame
+        
+        local slider = Instance.new("Frame")
+        slider.Size = UDim2.new(1, -24, 0, 4)
+        slider.Position = UDim2.new(0, 12, 0, 30)
+        slider.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+        slider.Parent = frame
+        Instance.new("UICorner", slider).CornerRadius = UDim.new(0, 2)
+        
+        local fill = Instance.new("Frame")
+        fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+        fill.BackgroundColor3 = Theme.Accent
+        fill.Parent = slider
+        Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 2)
+        
+        local current = default
+        local dragging = false
+        slider.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = true
+                local rel = math.clamp((input.Position.X - slider.AbsolutePosition.X) / slider.AbsoluteSize.X, 0, 1)
+                current = min + (max - min) * rel
+                current = math.floor(current / 1) * 1
+                Config[key] = current
+                fill.Size = UDim2.new((current - min) / (max - min), 0, 1, 0)
+                valLbl.Text = tostring(current) .. (suffix or "")
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                local rel = math.clamp((input.Position.X - slider.AbsolutePosition.X) / slider.AbsoluteSize.X, 0, 1)
+                current = min + (max - min) * rel
+                current = math.floor(current / 1) * 1
+                Config[key] = current
+                fill.Size = UDim2.new((current - min) / (max - min), 0, 1, 0)
+                valLbl.Text = tostring(current) .. (suffix or "")
+            end
+        end)
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+            end
+        end)
+        return frame
+    end
+    
+    -- ドロップダウン作成関数
+    local function AddDropdown(label, key, options, default)
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(1, 0, 0, 36)
+        frame.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+        frame.BackgroundTransparency = 0.3
+        frame.Parent = contentArea
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+        
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0.4, 0, 1, 0)
+        lbl.Position = UDim2.new(0, 12, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = label
+        lbl.TextColor3 = Theme.Text
+        lbl.Font = Enum.Font.Gotham
+        lbl.TextSize = 12
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = frame
+        
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.4, 0, 0.7, 0)
+        btn.Position = UDim2.new(0.6, 0, 0.15, 0)
+        btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+        btn.Text = default
+        btn.TextColor3 = Theme.TextBright
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 11
+        btn.Parent = frame
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+        
+        local current = default
+        local index = 1
+        for i, v in ipairs(options) do
+            if v == default then index = i end
+        end
+        
+        btn.MouseButton1Click:Connect(function()
+            index = index % #options + 1
+            current = options[index]
+            Config[key] = current
+            btn.Text = current
+        end)
+        return frame
+    end
+    
+    -- コンテンツ更新関数
+    local function UpdateContent()
+        for _, child in ipairs(contentArea:GetChildren()) do
+            if child:IsA("Frame") and child ~= contentLayout then
+                child:Destroy()
+            end
+        end
+        
+        if currentTab == "Aimbot" then
+            AddToggle("Enable Aimbot", "AimbotEnabled", false)
+            AddToggle("Team Check", "AimbotTeamCheck", true)
+            AddToggle("Visibility Check", "AimbotVisCheck", false)
+            AddToggle("Triggerbot", "AimbotTriggerbot", false)
+            AddToggle("Auto-Shoot", "AimbotAutoShoot", false)
+            AddSlider("FOV", "AimbotFOV", 10, 400, 120, "px")
+            AddSlider("Smoothing", "AimbotSmoothing", 0.05, 0.9, 0.35, "")
+            AddSlider("Sticky Strength", "AimbotStickyStrength", 0.5, 1.0, 0.85, "")
+            AddDropdown("Mode", "AimbotMode", {"Sticky", "Normal"}, "Sticky")
+            AddDropdown("Bone", "AimbotBone", {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}, "Head")
+            
+        elseif currentTab == "ESP" then
+            AddToggle("Enable ESP", "ESPEnabled", false)
+            AddToggle("Boxes", "ESPBoxes", true)
+            AddToggle("Names", "ESPNames", true)
+            AddToggle("Distance", "ESPDistance", true)
+            AddToggle("Health Bar", "ESPHealthBar", true)
+            AddSlider("Max Distance", "ESPMaxDist", 100, 5000, 1000, "studs")
+            
+        elseif currentTab == "Movement" then
+            AddToggle("Speed Hack", "SpeedEnabled", false)
+            AddSlider("Speed Value", "SpeedValue", 16, 300, 32, "studs/s")
+            AddToggle("Fly", "FlyEnabled", false)
+            AddSlider("Fly Speed", "FlySpeed", 10, 500, 80, "studs/s")
+            AddToggle("Noclip", "NoclipEnabled", false)
+            AddToggle("Infinite Jump", "InfiniteJump", false)
+            AddToggle("Bunny Hop", "BunnyHop", false)
+            
+        elseif currentTab == "Combat" then
+            AddToggle("Kill Aura", "KillAura", false)
+            AddSlider("Kill Aura Range", "KillAuraRange", 5, 100, 15, "studs")
+            
+        elseif currentTab == "Misc" then
+            AddToggle("Anti-AFK", "AntiAFK", true)
+            AddToggle("No Fog", "NoFog", false)
+            AddToggle("Full Bright", "FullBright", false)
+            
+            -- ボタン
+            local btnFrame = Instance.new("Frame")
+            btnFrame.Size = UDim2.new(1, 0, 0, 36)
+            btnFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+            btnFrame.BackgroundTransparency = 0.3
+            btnFrame.Parent = contentArea
+            Instance.new("UICorner", btnFrame).CornerRadius = UDim.new(0, 6)
+            
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0.9, 0, 0.7, 0)
+            btn.Position = UDim2.new(0.05, 0, 0.15, 0)
+            btn.BackgroundColor3 = Theme.Accent
+            btn.BackgroundTransparency = 0.2
+            btn.Text = "Teleport to Enemy"
+            btn.TextColor3 = Theme.TextBright
+            btn.Font = Enum.Font.GothamBold
+            btn.TextSize = 13
+            btn.Parent = btnFrame
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+            btn.MouseButton1Click:Connect(TeleportToTarget)
+            
+            local btn2 = Instance.new("TextButton")
+            btn2.Size = UDim2.new(0.9, 0, 0.7, 0)
+            btn2.Position = UDim2.new(0.05, 0, 0.15, 0)
+            btn2.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+            btn2.Text = "Respawn"
+            btn2.TextColor3 = Theme.TextBright
+            btn2.Font = Enum.Font.GothamBold
+            btn2.TextSize = 13
+            btn2.Parent = btnFrame
+            btn2.Position = UDim2.new(0.05, 0, 0.15, 0)
+            btn2.Size = UDim2.new(0.4, 0, 0.7, 0)
+            btn2.Position = UDim2.new(0.05, 0, 0.15, 0)
+            btn2.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+            btn2.Text = "Respawn"
+            btn2.TextColor3 = Theme.TextBright
+            btn2.Font = Enum.Font.GothamBold
+            btn2.TextSize = 13
+            btn2.Parent = btnFrame
+            Instance.new("UICorner", btn2).CornerRadius = UDim.new(0, 6)
+            btn2.Position = UDim2.new(0.55, 0, 0.15, 0)
+            btn2.MouseButton1Click:Connect(function() LP:LoadCharacter() end)
+        end
+        
+        contentArea.CanvasSize = UDim2.new(0, 0, 0, contentLayout.AbsoluteContentSize.Y + 10)
+    end
+    
+    UpdateContent()
+    
+    FallbackUI = gui
+    FallbackWindow = main
+    
+    -- ドラッグ機能
+    local dragStart, dragPos
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragStart = input.Position
+            dragPos = main.Position
+        end
+    end)
+    titleBar.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement and dragStart then
+            local delta = input.Position - dragStart
+            main.Position = UDim2.new(
+                dragPos.X.Scale,
+                dragPos.X.Offset + delta.X,
+                dragPos.Y.Scale,
+                dragPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragStart = nil
+        end
+    end)
+    
+    return gui
+end
+
+-- ============================================================
+--   ESP
 -- ============================================================
 local ESPObjects = {}
 local ESPUpdateCounter = 0
@@ -476,7 +885,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
---   AIMBOT (continue完全排除)
+--   AIMBOT
 -- ============================================================
 local CachedTarget, CachedTargetTime = nil, 0
 local CACHE_DURATION = 0.05
@@ -760,7 +1169,7 @@ local function TeleportToTarget()
 end
 
 -- ============================================================
---   ★★★ MISC (NoFog / FullBright リセット対応) ★★★
+--   MISC (NoFog / FullBright リセット対応)
 -- ============================================================
 RunService.RenderStepped:Connect(function()
     if Config.NoFog then
@@ -802,149 +1211,84 @@ LP.Idled:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ RAYFIELD UI (確実表示版) ★★★
+--   ★★★ メニュー作成 (優先: Rayfield, 代替: 本格UI) ★★★
 -- ============================================================
-local Window = nil
-local WindowCreated = false
+local RayfieldWindow = nil
+local RayfieldCreated = false
 
-local function CreateUI()
-    if not RayfieldLoaded or not Rayfield then
-        -- Rayfieldがまだならすぐにロード試行
-        if not RayfieldLoaded then
-            LoadRayfield()
-        end
-        if not RayfieldLoaded or not Rayfield then
-            return false
-        end
-    end
-
-    if WindowCreated then return true end
-
+local function CreateRayfieldUI()
+    if not RayfieldLoaded or not Rayfield then return false end
+    if RayfieldCreated then return true end
+    
     local success, err = pcall(function()
-        Window = Rayfield:CreateWindow({
+        RayfieldWindow = Rayfield:CreateWindow({
             Name = "ZETA X",
             Icon = 0,
             LoadingTitle = "ZETA X",
-            LoadingSubtitle = "Final Complete",
+            LoadingSubtitle = "Xeno Compatible",
             Theme = "Default",
             ConfigurationSaving = { Enabled = false },
             KeySystem = false,
         })
     end)
-
-    if not success or not Window then
-        print("[ZETA X] UI creation failed:", err)
-        return false
+    
+    if success and RayfieldWindow then
+        RayfieldCreated = true
+        RayfieldWindow.Visible = true
+        
+        -- Rayfield用UI構築 (簡略化)
+        local aimbotTab = RayfieldWindow:CreateTab("Aimbot", 4483362458)
+        aimbotTab:CreateToggle({Name = "Enable Aimbot", CurrentValue = Config.AimbotEnabled, Flag = "AimbotEnabled", Callback = function(v) Config.AimbotEnabled = v end})
+        aimbotTab:CreateToggle({Name = "Team Check", CurrentValue = Config.AimbotTeamCheck, Flag = "AimbotTeamCheck", Callback = function(v) Config.AimbotTeamCheck = v end})
+        aimbotTab:CreateToggle({Name = "Triggerbot", CurrentValue = Config.AimbotTriggerbot, Flag = "AimbotTriggerbot", Callback = function(v) Config.AimbotTriggerbot = v end})
+        aimbotTab:CreateToggle({Name = "Auto-Shoot", CurrentValue = Config.AimbotAutoShoot, Flag = "AimbotAutoShoot", Callback = function(v) Config.AimbotAutoShoot = v end})
+        aimbotTab:CreateSlider({Name = "FOV", Range = {10,400}, Increment = 5, Suffix = "px", CurrentValue = Config.AimbotFOV, Flag = "AimbotFOV", Callback = function(v) Config.AimbotFOV = v end})
+        aimbotTab:CreateDropdown({Name = "Mode", Options = {"Sticky","Normal"}, CurrentOption = {Config.AimbotMode}, Flag = "AimbotMode", Callback = function(v) Config.AimbotMode = v[1] end})
+        
+        local espTab = RayfieldWindow:CreateTab("ESP", 4483362458)
+        espTab:CreateToggle({Name = "Enable ESP", CurrentValue = Config.ESPEnabled, Flag = "ESPEnabled", Callback = function(v) Config.ESPEnabled = v end})
+        espTab:CreateToggle({Name = "Boxes", CurrentValue = Config.ESPBoxes, Flag = "ESPBoxes", Callback = function(v) Config.ESPBoxes = v end})
+        espTab:CreateToggle({Name = "Names", CurrentValue = Config.ESPNames, Flag = "ESPNames", Callback = function(v) Config.ESPNames = v end})
+        
+        local movTab = RayfieldWindow:CreateTab("Movement", 4483362458)
+        movTab:CreateToggle({Name = "Speed", CurrentValue = Config.SpeedEnabled, Flag = "SpeedEnabled", Callback = function(v) Config.SpeedEnabled = v end})
+        movTab:CreateToggle({Name = "Fly", CurrentValue = Config.FlyEnabled, Flag = "FlyEnabled", Callback = function(v) Config.FlyEnabled = v end})
+        movTab:CreateToggle({Name = "Noclip", CurrentValue = Config.NoclipEnabled, Flag = "NoclipEnabled", Callback = function(v) Config.NoclipEnabled = v end})
+        
+        local combatTab = RayfieldWindow:CreateTab("Combat", 4483362458)
+        combatTab:CreateToggle({Name = "Kill Aura", CurrentValue = Config.KillAura, Flag = "KillAura", Callback = function(v) Config.KillAura = v end})
+        
+        return true
     end
-
-    WindowCreated = true
-    Window.Visible = true
-
-    -- Profiles
-    local ProfileTab = Window:CreateTab("💾 Profiles", 4483362458)
-
-    -- Aimbot
-    local AimbotTab = Window:CreateTab("🎯 Aimbot", 4483362458)
-    AimbotTab:CreateToggle({Name = "Enable Aimbot", CurrentValue = Config.AimbotEnabled, Flag = "AimbotEnabled", Callback = function(v) Config.AimbotEnabled = v; if FOVCircle then FOVCircle.Visible = v end end})
-    AimbotTab:CreateToggle({Name = "Team Check", CurrentValue = Config.AimbotTeamCheck, Flag = "AimbotTeamCheck", Callback = function(v) Config.AimbotTeamCheck = v end})
-    AimbotTab:CreateToggle({Name = "Vis Check", CurrentValue = Config.AimbotVisCheck, Flag = "AimbotVisCheck", Callback = function(v) Config.AimbotVisCheck = v end})
-    AimbotTab:CreateToggle({Name = "Triggerbot", CurrentValue = Config.AimbotTriggerbot, Flag = "AimbotTriggerbot", Callback = function(v) Config.AimbotTriggerbot = v end})
-    AimbotTab:CreateToggle({Name = "Auto-Shoot", CurrentValue = Config.AimbotAutoShoot, Flag = "AimbotAutoShoot", Callback = function(v) Config.AimbotAutoShoot = v end})
-    AimbotTab:CreateDropdown({Name = "Mode", Options = {"Sticky", "Normal"}, CurrentOption = {Config.AimbotMode}, Flag = "AimbotMode", Callback = function(v) Config.AimbotMode = v[1] end})
-    AimbotTab:CreateSlider({Name = "FOV", Range = {10, 400}, Increment = 5, Suffix = "px", CurrentValue = Config.AimbotFOV, Flag = "AimbotFOV", Callback = function(v) Config.AimbotFOV = v; if FOVCircle then FOVCircle.Radius = v end end})
-    AimbotTab:CreateSlider({Name = "Smoothing", Range = {0.05, 0.9}, Increment = 0.05, Suffix = "", CurrentValue = Config.AimbotSmoothing, Flag = "AimbotSmoothing", Callback = function(v) Config.AimbotSmoothing = v end})
-    AimbotTab:CreateSlider({Name = "Sticky Strength", Range = {0.5, 1.0}, Increment = 0.05, Suffix = "", CurrentValue = Config.AimbotStickyStrength, Flag = "AimbotStickyStrength", Callback = function(v) Config.AimbotStickyStrength = v end})
-    AimbotTab:CreateDropdown({Name = "Bone", Options = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}, CurrentOption = {Config.AimbotBone}, Flag = "AimbotBone", Callback = function(v) Config.AimbotBone = v[1] end})
-
-    -- ESP
-    local ESPTab = Window:CreateTab("👁️ ESP", 4483362458)
-    ESPTab:CreateToggle({Name = "Enable ESP", CurrentValue = Config.ESPEnabled, Flag = "ESPEnabled", Callback = function(v) Config.ESPEnabled = v; if not v then for pl in pairs(ESPObjects) do Safe(RemoveESP, pl) end end end})
-    ESPTab:CreateToggle({Name = "Boxes", CurrentValue = Config.ESPBoxes, Flag = "ESPBoxes", Callback = function(v) Config.ESPBoxes = v end})
-    ESPTab:CreateToggle({Name = "Names", CurrentValue = Config.ESPNames, Flag = "ESPNames", Callback = function(v) Config.ESPNames = v end})
-    ESPTab:CreateToggle({Name = "Distance", CurrentValue = Config.ESPDistance, Flag = "ESPDistance", Callback = function(v) Config.ESPDistance = v end})
-    ESPTab:CreateToggle({Name = "Health Bar", CurrentValue = Config.ESPHealthBar, Flag = "ESPHealthBar", Callback = function(v) Config.ESPHealthBar = v end})
-    ESPTab:CreateSlider({Name = "Max Distance", Range = {100, 5000}, Increment = 50, Suffix = "studs", CurrentValue = Config.ESPMaxDist, Flag = "ESPMaxDist", Callback = function(v) Config.ESPMaxDist = v end})
-
-    -- Movement
-    local MovTab = Window:CreateTab("🏃 Movement", 4483362458)
-    MovTab:CreateToggle({Name = "Speed", CurrentValue = Config.SpeedEnabled, Flag = "SpeedEnabled", Callback = function(v) Config.SpeedEnabled = v end})
-    MovTab:CreateSlider({Name = "Speed Value", Range = {16, 300}, Increment = 2, Suffix = "studs/s", CurrentValue = Config.SpeedValue, Flag = "SpeedValue", Callback = function(v) Config.SpeedValue = v end})
-    MovTab:CreateToggle({Name = "Fly", CurrentValue = Config.FlyEnabled, Flag = "FlyEnabled", Callback = function(v) Config.FlyEnabled = v; if v then Safe(StartFly) else Safe(StopFly) end end})
-    MovTab:CreateSlider({Name = "Fly Speed", Range = {10, 500}, Increment = 5, Suffix = "studs/s", CurrentValue = Config.FlySpeed, Flag = "FlySpeed", Callback = function(v) Config.FlySpeed = v end})
-    MovTab:CreateToggle({Name = "Noclip", CurrentValue = Config.NoclipEnabled, Flag = "NoclipEnabled", Callback = function(v) Config.NoclipEnabled = v end})
-    MovTab:CreateToggle({Name = "Infinite Jump", CurrentValue = Config.InfiniteJump, Flag = "InfiniteJump", Callback = function(v) Config.InfiniteJump = v end})
-    MovTab:CreateToggle({Name = "Bunny Hop", CurrentValue = Config.BunnyHop, Flag = "BunnyHop", Callback = function(v) Config.BunnyHop = v end})
-
-    -- Combat (AutoHeal削除)
-    local CombatTab = Window:CreateTab("⚔️ Combat", 4483362458)
-    CombatTab:CreateToggle({Name = "Kill Aura", CurrentValue = Config.KillAura, Flag = "KillAura", Callback = function(v) Config.KillAura = v end})
-    CombatTab:CreateSlider({Name = "Range", Range = {5, 100}, Increment = 1, Suffix = "studs", CurrentValue = Config.KillAuraRange, Flag = "KillAuraRange", Callback = function(v) Config.KillAuraRange = v end})
-
-    -- Misc
-    local MiscTab = Window:CreateTab("🔧 Misc", 4483362458)
-    MiscTab:CreateToggle({Name = "Anti-AFK", CurrentValue = Config.AntiAFK, Flag = "AntiAFK", Callback = function(v) Config.AntiAFK = v end})
-    MiscTab:CreateToggle({Name = "No Fog", CurrentValue = Config.NoFog, Flag = "NoFog", Callback = function(v) Config.NoFog = v end})
-    MiscTab:CreateToggle({Name = "Full Bright", CurrentValue = Config.FullBright, Flag = "FullBright", Callback = function(v) Config.FullBright = v end})
-    MiscTab:CreateButton({Name = "Teleport to Enemy", Callback = TeleportToTarget})
-    MiscTab:CreateButton({Name = "Rejoin", Callback = function() TeleportService:Teleport(game.PlaceId, LP) end})
-    MiscTab:CreateButton({Name = "Respawn", Callback = function() LP:LoadCharacter() end})
-
-    Notify("ZETA X", "Final Complete loaded", 3)
-    return true
-end
-
--- ★★★ UI作成を強力に実行 ★★★
--- メインスレッドで同期的に実行（確実に）
-local function ForceCreateUI()
-    -- Rayfieldがロードされるまで待機
-    local waitCount = 0
-    while not RayfieldLoaded and waitCount < 20 do
-        task.wait(1)
-        waitCount = waitCount + 1
-        if not RayfieldLoaded then
-            LoadRayfield()
-        end
-    end
-
-    -- UI作成を試行 (最大5回)
-    for i = 1, 5 do
-        if CreateUI() then
-            print("[ZETA X] UI created successfully")
-            return true
-        end
-        task.wait(1)
-    end
-
-    -- それでもダメならフォールバック通知
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = "ZETA X",
-            Text = "UI creation failed but features are running",
-            Duration = 5,
-        })
-    end)
-    print("[ZETA X] UI creation failed after retries")
     return false
 end
 
--- 非同期で実行（メインループをブロックしない）
-task.spawn(ForceCreateUI)
+-- ★★★ メニュー起動 ★★★
+task.spawn(function()
+    wait(1)
+    if not CreateRayfieldUI() then
+        CreateFallbackUI()
+    end
+end)
 
 -- ============================================================
---   メニュー表示切替 (Kキー)
+--   ★★★ メニュー表示切替 (Kキー) ★★★
 -- ============================================================
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.K then
-        if Window then
-            Window.Visible = not Window.Visible
+        if RayfieldCreated and RayfieldWindow then
+            RayfieldWindow.Visible = not RayfieldWindow.Visible
+        elseif FallbackWindow then
+            FallbackWindow.Visible = not FallbackWindow.Visible
         else
-            -- Windowがなければ強制作成
-            ForceCreateUI()
+            if not CreateRayfieldUI() then
+                CreateFallbackUI()
+            end
         end
     end
 end)
 
-print("[ZETA X] Final Complete loaded. Menu: K key.")
+print("[ZETA X] Xeno Compatible loaded. Menu: K key.")
 
 while true do task.wait(10) end
 
