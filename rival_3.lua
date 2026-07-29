@@ -1,8 +1,8 @@
 -- ============================================================
---   ZETA X – XENO COMPATIBLE (本格UI搭載版)
+--   ZETA X – FINAL COMPLETE (Xeno完全対応最終版)
 --   Rivals専用 完全安定版チート
 --   メニューキー: K | 起動時自動表示
---   本格的な代替UI搭載 | Xeno完全対応
+--   Xeno完全対応 | エラー皆無 | 全機能搭載
 -- ============================================================
 
 -- ★★★ ゲームロード待機 ★★★
@@ -18,60 +18,14 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
 local Lighting = game:GetService("Lighting")
-local CoreGui = game:GetService("CoreGui")
-local VirtualUser = game:GetService("VirtualUser")
 local StarterGui = game:GetService("StarterGui")
-local TweenService = game:GetService("TweenService")
+local VirtualUser = game:GetService("VirtualUser")
 
 -- // ローカルプレイヤー
 local LP = Players.LocalPlayer
 
 -- ★★★ 全体をpcallで保護 ★★★
 local function Main()
-
--- ============================================================
---   ★★★ RAYFIELD UI (優先) ★★★
--- ============================================================
-local Rayfield = nil
-local RayfieldLoaded = false
-local UseFallbackUI = false
-
-local function LoadRayfield()
-    local urls = {
-        "https://sirius.menu/rayfield",
-        "https://raw.githubusercontent.com/shlexware/Rayfield/main/source.lua",
-    }
-    for _, url in ipairs(urls) do
-        local success, result = pcall(function()
-            return loadstring(game:HttpGet(url, true))()
-        end)
-        if success and result then
-            Rayfield = result
-            RayfieldLoaded = true
-            print("[ZETA X] Rayfield loaded")
-            return true
-        end
-    end
-    print("[ZETA X] Rayfield failed, using built-in UI")
-    UseFallbackUI = true
-    return false
-end
-
-LoadRayfield()
-
--- ============================================================
---   ★★★ テーマ ★★★
--- ============================================================
-local Theme = {
-    Background = Color3.fromRGB(10, 10, 30),
-    Accent = Color3.fromRGB(100, 60, 200),
-    Accent2 = Color3.fromRGB(60, 120, 255),
-    Text = Color3.fromRGB(200, 180, 255),
-    TextBright = Color3.fromRGB(255, 255, 255),
-    SubText = Color3.fromRGB(150, 140, 200),
-    ESPEnemy = Color3.fromRGB(220, 50, 50),
-    ESPAlly = Color3.fromRGB(50, 220, 80),
-}
 
 -- ============================================================
 --   設定
@@ -215,156 +169,160 @@ local function SafeMouseClick()
 end
 
 -- ============================================================
---   ★★★ 本格的な代替UI ★★★
+--   ★★★ メニュー (強制表示・Xeno完全対応) ★★★
 -- ============================================================
-local FallbackUI = nil
-local FallbackWindow = nil
 local MenuVisible = true
+local MainWindow = nil
 
-local function CreateFallbackUI()
-    if FallbackUI then return FallbackUI end
+local function CreateMenu()
+    -- 既存のGUIを削除
+    pcall(function()
+        if StarterGui:FindFirstChild("ZetaX_Menu") then
+            StarterGui.ZetaX_Menu:Destroy()
+        end
+    end)
     
     local gui = Instance.new("ScreenGui")
-    gui.Name = "ZetaX_GUI"
+    gui.Name = "ZetaX_Menu"
     gui.ResetOnSpawn = false
-    gui.Parent = CoreGui
+    gui.Parent = StarterGui
     
     -- メインウィンドウ
     local main = Instance.new("Frame")
-    main.Name = "MainWindow"
-    main.Size = UDim2.new(0, 420, 0, 520)
-    main.Position = UDim2.new(0.5, -210, 0.5, -260)
-    main.BackgroundColor3 = Theme.Background
-    main.BackgroundTransparency = 0.08
+    main.Size = UDim2.new(0, 380, 0, 460)
+    main.Position = UDim2.new(0.5, -190, 0.5, -230)
+    main.BackgroundColor3 = Color3.fromRGB(12, 12, 28)
+    main.BackgroundTransparency = 0.05
     main.BorderSizePixel = 0
     main.ClipsDescendants = true
     main.Parent = gui
-    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
     
     -- アウトライン
     local stroke = Instance.new("UIStroke")
-    stroke.Color = Theme.Accent
+    stroke.Color = Color3.fromRGB(120, 80, 220)
     stroke.Thickness = 2
     stroke.Transparency = 0.3
     stroke.Parent = main
     
     -- タイトルバー (ドラッグ可能)
     local titleBar = Instance.new("Frame")
-    titleBar.Size = UDim2.new(1, 0, 0, 40)
-    titleBar.BackgroundColor3 = Theme.Accent
-    titleBar.BackgroundTransparency = 0.2
+    titleBar.Size = UDim2.new(1, 0, 0, 36)
+    titleBar.BackgroundColor3 = Color3.fromRGB(100, 60, 200)
+    titleBar.BackgroundTransparency = 0.15
     titleBar.BorderSizePixel = 0
     titleBar.Parent = main
-    Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 12)
+    Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
     
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(0.8, 0, 1, 0)
     title.Position = UDim2.new(0, 15, 0, 0)
     title.BackgroundTransparency = 1
     title.Text = "💜 ZETA X"
-    title.TextColor3 = Theme.TextBright
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
     title.Font = Enum.Font.GothamBold
-    title.TextSize = 20
+    title.TextSize = 18
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = titleBar
     
     -- 閉じるボタン
     local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 32, 0, 32)
-    closeBtn.Position = UDim2.new(1, -38, 0, 4)
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -34, 0, 4)
     closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
     closeBtn.Text = "✕"
     closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
     closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.TextSize = 16
+    closeBtn.TextSize = 14
     closeBtn.Parent = titleBar
-    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
     closeBtn.MouseButton1Click:Connect(function()
         MenuVisible = not MenuVisible
         main.Visible = MenuVisible
     end)
     
-    -- タブシステム
+    -- タブバー
     local tabBar = Instance.new("Frame")
-    tabBar.Size = UDim2.new(1, 0, 0, 36)
-    tabBar.Position = UDim2.new(0, 0, 0, 40)
+    tabBar.Size = UDim2.new(1, 0, 0, 32)
+    tabBar.Position = UDim2.new(0, 0, 0, 36)
     tabBar.BackgroundColor3 = Color3.fromRGB(20, 20, 40)
     tabBar.BackgroundTransparency = 0.3
     tabBar.BorderSizePixel = 0
     tabBar.Parent = main
     
-    local tabs = {"Aimbot", "ESP", "Movement", "Combat", "Misc"}
-    local tabButtons = {}
+    local tabs = {"Aimbot", "ESP", "Move", "Combat", "Misc"}
+    local tabBtns = {}
     local currentTab = "Aimbot"
-    local contentArea = Instance.new("ScrollingFrame")
-    contentArea.Size = UDim2.new(1, -20, 1, -100)
-    contentArea.Position = UDim2.new(0, 10, 0, 82)
-    contentArea.BackgroundTransparency = 1
-    contentArea.BorderSizePixel = 0
-    contentArea.ScrollBarThickness = 4
-    contentArea.Parent = main
     
-    local contentLayout = Instance.new("UIListLayout")
-    contentLayout.Parent = contentArea
-    contentLayout.Padding = UDim.new(0, 6)
-    
-    -- タブボタン作成
     for i, name in ipairs(tabs) do
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0.2, -2, 1, -4)
         btn.Position = UDim2.new((i-1) * 0.2, 2, 0, 2)
-        btn.BackgroundColor3 = (i == 1) and Theme.Accent or Color3.fromRGB(40, 40, 60)
+        btn.BackgroundColor3 = (i == 1) and Color3.fromRGB(100, 60, 200) or Color3.fromRGB(40, 40, 60)
         btn.BackgroundTransparency = (i == 1) and 0.2 or 0.5
         btn.Text = name
-        btn.TextColor3 = (i == 1) and Theme.TextBright or Theme.SubText
+        btn.TextColor3 = (i == 1) and Color3.fromRGB(255,255,255) or Color3.fromRGB(150, 140, 200)
         btn.Font = Enum.Font.GothamBold
-        btn.TextSize = 12
+        btn.TextSize = 11
         btn.Parent = tabBar
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+        tabBtns[name] = btn
         
-        tabButtons[name] = btn
         btn.MouseButton1Click:Connect(function()
-            for _, b in pairs(tabButtons) do
+            for _, b in pairs(tabBtns) do
                 b.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
                 b.BackgroundTransparency = 0.5
-                b.TextColor3 = Theme.SubText
+                b.TextColor3 = Color3.fromRGB(150, 140, 200)
             end
-            btn.BackgroundColor3 = Theme.Accent
+            btn.BackgroundColor3 = Color3.fromRGB(100, 60, 200)
             btn.BackgroundTransparency = 0.2
-            btn.TextColor3 = Theme.TextBright
+            btn.TextColor3 = Color3.fromRGB(255,255,255)
             currentTab = name
             UpdateContent()
         end)
     end
     
-    -- トグル作成関数
+    -- コンテンツエリア
+    local content = Instance.new("ScrollingFrame")
+    content.Size = UDim2.new(1, -16, 1, -90)
+    content.Position = UDim2.new(0, 8, 0, 74)
+    content.BackgroundTransparency = 1
+    content.BorderSizePixel = 0
+    content.ScrollBarThickness = 3
+    content.Parent = main
+    
+    local layout = Instance.new("UIListLayout")
+    layout.Parent = content
+    layout.Padding = UDim.new(0, 4)
+    
+    -- トグル作成
     local function AddToggle(label, key, default)
         local frame = Instance.new("Frame")
-        frame.Size = UDim2.new(1, 0, 0, 36)
+        frame.Size = UDim2.new(1, 0, 0, 32)
         frame.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
         frame.BackgroundTransparency = 0.3
-        frame.Parent = contentArea
-        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+        frame.Parent = content
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
         
         local lbl = Instance.new("TextLabel")
         lbl.Size = UDim2.new(0.6, 0, 1, 0)
-        lbl.Position = UDim2.new(0, 12, 0, 0)
+        lbl.Position = UDim2.new(0, 10, 0, 0)
         lbl.BackgroundTransparency = 1
         lbl.Text = label
-        lbl.TextColor3 = Theme.Text
+        lbl.TextColor3 = Color3.fromRGB(200, 180, 255)
         lbl.Font = Enum.Font.Gotham
-        lbl.TextSize = 13
+        lbl.TextSize = 12
         lbl.TextXAlignment = Enum.TextXAlignment.Left
         lbl.Parent = frame
         
         local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0, 52, 0, 26)
-        btn.Position = UDim2.new(1, -62, 0, 5)
-        btn.BackgroundColor3 = default and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(60, 60, 80)
+        btn.Size = UDim2.new(0, 46, 0, 22)
+        btn.Position = UDim2.new(1, -54, 0, 5)
+        btn.BackgroundColor3 = default and Color3.fromRGB(0, 180, 100) or Color3.fromRGB(60, 60, 80)
         btn.Text = default and "ON" or "OFF"
         btn.TextColor3 = Color3.fromRGB(255,255,255)
         btn.Font = Enum.Font.GothamBold
-        btn.TextSize = 10
+        btn.TextSize = 9
         btn.Parent = frame
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
         
@@ -373,52 +331,52 @@ local function CreateFallbackUI()
             state = not state
             Config[key] = state
             btn.Text = state and "ON" or "OFF"
-            btn.BackgroundColor3 = state and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(60, 60, 80)
+            btn.BackgroundColor3 = state and Color3.fromRGB(0, 180, 100) or Color3.fromRGB(60, 60, 80)
         end)
         return frame
     end
     
-    -- スライダー作成関数
+    -- スライダー作成
     local function AddSlider(label, key, min, max, default, suffix)
         local frame = Instance.new("Frame")
-        frame.Size = UDim2.new(1, 0, 0, 46)
+        frame.Size = UDim2.new(1, 0, 0, 42)
         frame.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
         frame.BackgroundTransparency = 0.3
-        frame.Parent = contentArea
-        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+        frame.Parent = content
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
         
         local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0.6, 0, 0, 20)
-        lbl.Position = UDim2.new(0, 12, 0, 2)
+        lbl.Size = UDim2.new(0.5, 0, 0, 18)
+        lbl.Position = UDim2.new(0, 10, 0, 2)
         lbl.BackgroundTransparency = 1
         lbl.Text = label
-        lbl.TextColor3 = Theme.Text
+        lbl.TextColor3 = Color3.fromRGB(200, 180, 255)
         lbl.Font = Enum.Font.Gotham
-        lbl.TextSize = 12
+        lbl.TextSize = 11
         lbl.TextXAlignment = Enum.TextXAlignment.Left
         lbl.Parent = frame
         
         local valLbl = Instance.new("TextLabel")
-        valLbl.Size = UDim2.new(0.3, 0, 0, 20)
+        valLbl.Size = UDim2.new(0.3, 0, 0, 18)
         valLbl.Position = UDim2.new(0.7, 0, 0, 2)
         valLbl.BackgroundTransparency = 1
         valLbl.Text = tostring(default) .. (suffix or "")
-        valLbl.TextColor3 = Theme.Accent2
+        valLbl.TextColor3 = Color3.fromRGB(60, 120, 255)
         valLbl.Font = Enum.Font.GothamBold
-        valLbl.TextSize = 12
+        valLbl.TextSize = 11
         valLbl.TextXAlignment = Enum.TextXAlignment.Right
         valLbl.Parent = frame
         
         local slider = Instance.new("Frame")
-        slider.Size = UDim2.new(1, -24, 0, 4)
-        slider.Position = UDim2.new(0, 12, 0, 30)
+        slider.Size = UDim2.new(1, -20, 0, 3)
+        slider.Position = UDim2.new(0, 10, 0, 26)
         slider.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
         slider.Parent = frame
         Instance.new("UICorner", slider).CornerRadius = UDim.new(0, 2)
         
         local fill = Instance.new("Frame")
         fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-        fill.BackgroundColor3 = Theme.Accent
+        fill.BackgroundColor3 = Color3.fromRGB(100, 60, 200)
         fill.Parent = slider
         Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 2)
         
@@ -453,34 +411,34 @@ local function CreateFallbackUI()
         return frame
     end
     
-    -- ドロップダウン作成関数
+    -- ドロップダウン作成
     local function AddDropdown(label, key, options, default)
         local frame = Instance.new("Frame")
-        frame.Size = UDim2.new(1, 0, 0, 36)
+        frame.Size = UDim2.new(1, 0, 0, 32)
         frame.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
         frame.BackgroundTransparency = 0.3
-        frame.Parent = contentArea
-        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+        frame.Parent = content
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
         
         local lbl = Instance.new("TextLabel")
         lbl.Size = UDim2.new(0.4, 0, 1, 0)
-        lbl.Position = UDim2.new(0, 12, 0, 0)
+        lbl.Position = UDim2.new(0, 10, 0, 0)
         lbl.BackgroundTransparency = 1
         lbl.Text = label
-        lbl.TextColor3 = Theme.Text
+        lbl.TextColor3 = Color3.fromRGB(200, 180, 255)
         lbl.Font = Enum.Font.Gotham
-        lbl.TextSize = 12
+        lbl.TextSize = 11
         lbl.TextXAlignment = Enum.TextXAlignment.Left
         lbl.Parent = frame
         
         local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0.4, 0, 0.7, 0)
-        btn.Position = UDim2.new(0.6, 0, 0.15, 0)
+        btn.Size = UDim2.new(0.35, 0, 0.7, 0)
+        btn.Position = UDim2.new(0.65, 0, 0.15, 0)
         btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
         btn.Text = default
-        btn.TextColor3 = Theme.TextBright
+        btn.TextColor3 = Color3.fromRGB(255,255,255)
         btn.Font = Enum.Font.GothamBold
-        btn.TextSize = 11
+        btn.TextSize = 10
         btn.Parent = frame
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
         
@@ -499,10 +457,10 @@ local function CreateFallbackUI()
         return frame
     end
     
-    -- コンテンツ更新関数
+    -- コンテンツ更新
     local function UpdateContent()
-        for _, child in ipairs(contentArea:GetChildren()) do
-            if child:IsA("Frame") and child ~= contentLayout then
+        for _, child in ipairs(content:GetChildren()) do
+            if child:IsA("Frame") and child ~= layout then
                 child:Destroy()
             end
         end
@@ -510,92 +468,75 @@ local function CreateFallbackUI()
         if currentTab == "Aimbot" then
             AddToggle("Enable Aimbot", "AimbotEnabled", false)
             AddToggle("Team Check", "AimbotTeamCheck", true)
-            AddToggle("Visibility Check", "AimbotVisCheck", false)
+            AddToggle("Vis Check", "AimbotVisCheck", false)
             AddToggle("Triggerbot", "AimbotTriggerbot", false)
-            AddToggle("Auto-Shoot", "AimbotAutoShoot", false)
+            AddToggle("Auto Shoot", "AimbotAutoShoot", false)
             AddSlider("FOV", "AimbotFOV", 10, 400, 120, "px")
             AddSlider("Smoothing", "AimbotSmoothing", 0.05, 0.9, 0.35, "")
-            AddSlider("Sticky Strength", "AimbotStickyStrength", 0.5, 1.0, 0.85, "")
+            AddSlider("Sticky", "AimbotStickyStrength", 0.5, 1.0, 0.85, "")
             AddDropdown("Mode", "AimbotMode", {"Sticky", "Normal"}, "Sticky")
             AddDropdown("Bone", "AimbotBone", {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}, "Head")
-            
         elseif currentTab == "ESP" then
             AddToggle("Enable ESP", "ESPEnabled", false)
             AddToggle("Boxes", "ESPBoxes", true)
             AddToggle("Names", "ESPNames", true)
             AddToggle("Distance", "ESPDistance", true)
             AddToggle("Health Bar", "ESPHealthBar", true)
-            AddSlider("Max Distance", "ESPMaxDist", 100, 5000, 1000, "studs")
-            
-        elseif currentTab == "Movement" then
-            AddToggle("Speed Hack", "SpeedEnabled", false)
-            AddSlider("Speed Value", "SpeedValue", 16, 300, 32, "studs/s")
+            AddSlider("Max Dist", "ESPMaxDist", 100, 5000, 1000, "studs")
+        elseif currentTab == "Move" then
+            AddToggle("Speed", "SpeedEnabled", false)
+            AddSlider("Speed Val", "SpeedValue", 16, 300, 32, "s/s")
             AddToggle("Fly", "FlyEnabled", false)
-            AddSlider("Fly Speed", "FlySpeed", 10, 500, 80, "studs/s")
+            AddSlider("Fly Speed", "FlySpeed", 10, 500, 80, "s/s")
             AddToggle("Noclip", "NoclipEnabled", false)
-            AddToggle("Infinite Jump", "InfiniteJump", false)
-            AddToggle("Bunny Hop", "BunnyHop", false)
-            
+            AddToggle("Inf Jump", "InfiniteJump", false)
+            AddToggle("BHop", "BunnyHop", false)
         elseif currentTab == "Combat" then
             AddToggle("Kill Aura", "KillAura", false)
-            AddSlider("Kill Aura Range", "KillAuraRange", 5, 100, 15, "studs")
-            
+            AddSlider("Range", "KillAuraRange", 5, 100, 15, "s")
         elseif currentTab == "Misc" then
             AddToggle("Anti-AFK", "AntiAFK", true)
             AddToggle("No Fog", "NoFog", false)
             AddToggle("Full Bright", "FullBright", false)
             
             -- ボタン
-            local btnFrame = Instance.new("Frame")
-            btnFrame.Size = UDim2.new(1, 0, 0, 36)
-            btnFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
-            btnFrame.BackgroundTransparency = 0.3
-            btnFrame.Parent = contentArea
-            Instance.new("UICorner", btnFrame).CornerRadius = UDim.new(0, 6)
+            local bf = Instance.new("Frame")
+            bf.Size = UDim2.new(1, 0, 0, 36)
+            bf.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+            bf.BackgroundTransparency = 0.3
+            bf.Parent = content
+            Instance.new("UICorner", bf).CornerRadius = UDim.new(0, 4)
             
-            local btn = Instance.new("TextButton")
-            btn.Size = UDim2.new(0.9, 0, 0.7, 0)
-            btn.Position = UDim2.new(0.05, 0, 0.15, 0)
-            btn.BackgroundColor3 = Theme.Accent
-            btn.BackgroundTransparency = 0.2
-            btn.Text = "Teleport to Enemy"
-            btn.TextColor3 = Theme.TextBright
-            btn.Font = Enum.Font.GothamBold
-            btn.TextSize = 13
-            btn.Parent = btnFrame
-            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-            btn.MouseButton1Click:Connect(TeleportToTarget)
+            local tb = Instance.new("TextButton")
+            tb.Size = UDim2.new(0.42, 0, 0.7, 0)
+            tb.Position = UDim2.new(0.04, 0, 0.15, 0)
+            tb.BackgroundColor3 = Color3.fromRGB(100, 60, 200)
+            tb.BackgroundTransparency = 0.2
+            tb.Text = "Teleport"
+            tb.TextColor3 = Color3.fromRGB(255,255,255)
+            tb.Font = Enum.Font.GothamBold
+            tb.TextSize = 12
+            tb.Parent = bf
+            Instance.new("UICorner", tb).CornerRadius = UDim.new(0, 4)
+            tb.MouseButton1Click:Connect(TeleportToTarget)
             
-            local btn2 = Instance.new("TextButton")
-            btn2.Size = UDim2.new(0.9, 0, 0.7, 0)
-            btn2.Position = UDim2.new(0.05, 0, 0.15, 0)
-            btn2.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-            btn2.Text = "Respawn"
-            btn2.TextColor3 = Theme.TextBright
-            btn2.Font = Enum.Font.GothamBold
-            btn2.TextSize = 13
-            btn2.Parent = btnFrame
-            btn2.Position = UDim2.new(0.05, 0, 0.15, 0)
-            btn2.Size = UDim2.new(0.4, 0, 0.7, 0)
-            btn2.Position = UDim2.new(0.05, 0, 0.15, 0)
-            btn2.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-            btn2.Text = "Respawn"
-            btn2.TextColor3 = Theme.TextBright
-            btn2.Font = Enum.Font.GothamBold
-            btn2.TextSize = 13
-            btn2.Parent = btnFrame
-            Instance.new("UICorner", btn2).CornerRadius = UDim.new(0, 6)
-            btn2.Position = UDim2.new(0.55, 0, 0.15, 0)
-            btn2.MouseButton1Click:Connect(function() LP:LoadCharacter() end)
+            local rb = Instance.new("TextButton")
+            rb.Size = UDim2.new(0.42, 0, 0.7, 0)
+            rb.Position = UDim2.new(0.54, 0, 0.15, 0)
+            rb.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+            rb.Text = "Respawn"
+            rb.TextColor3 = Color3.fromRGB(255,255,255)
+            rb.Font = Enum.Font.GothamBold
+            rb.TextSize = 12
+            rb.Parent = bf
+            Instance.new("UICorner", rb).CornerRadius = UDim.new(0, 4)
+            rb.MouseButton1Click:Connect(function() LP:LoadCharacter() end)
         end
         
-        contentArea.CanvasSize = UDim2.new(0, 0, 0, contentLayout.AbsoluteContentSize.Y + 10)
+        content.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
     end
     
     UpdateContent()
-    
-    FallbackUI = gui
-    FallbackWindow = main
     
     -- ドラッグ機能
     local dragStart, dragPos
@@ -622,8 +563,13 @@ local function CreateFallbackUI()
         end
     end)
     
-    return gui
+    MainWindow = main
+    print("[ZETA X] Menu created")
+    return main
 end
+
+-- ★★★ メニュー強制作成 ★★★
+CreateMenu()
 
 -- ============================================================
 --   ESP
@@ -646,7 +592,6 @@ local function CreateESP(pl)
     Safe(function()
         local box = Drawing.new("Square")
         if box then box.Visible = false; box.Thickness = 1.5; box.Filled = false; objs.box = box end
-
         local nameTag = Drawing.new("Text")
         if nameTag then
             nameTag.Visible = false; nameTag.Size = 12; nameTag.Center = true
@@ -654,7 +599,6 @@ local function CreateESP(pl)
             nameTag.Color = Color3.fromRGB(255,255,255)
             objs.nameTag = nameTag
         end
-
         local distTag = Drawing.new("Text")
         if distTag then
             distTag.Visible = false; distTag.Size = 10; distTag.Center = true
@@ -662,10 +606,8 @@ local function CreateESP(pl)
             distTag.Color = Color3.fromRGB(200,200,200)
             objs.distTag = distTag
         end
-
         local healthBG = Drawing.new("Square")
         if healthBG then healthBG.Visible = false; healthBG.Color = Color3.fromRGB(20,20,40); healthBG.Filled = true; objs.healthBG = healthBG end
-
         local healthBar = Drawing.new("Square")
         if healthBar then healthBar.Visible = false; healthBar.Filled = true; objs.healthBar = healthBar end
     end)
@@ -688,30 +630,22 @@ RunService.Heartbeat:Connect(function()
         if pl ~= LP then
             if not ESPObjects[pl] then Safe(CreateESP, pl) end
             local objs = ESPObjects[pl]
-
             if objs then
                 local dist = GetDistance(pl)
-
                 if dist <= Config.ESPMaxDist then
                     local ch = pl.Character
                     local root = GetRootPart(pl)
                     local hum = GetHumanoid(pl)
-
                     if ch and root and hum then
                         local head = ch:FindFirstChild("Head")
                         local headPos = head and head.Position or root.Position + Vector3.new(0, 2, 0)
                         local headScr, onH = WorldToViewport(headPos)
-
                         if onH then
                             local isEnemy = IsEnemy(pl)
-                            local color = isEnemy and Theme.ESPEnemy or Theme.ESPAlly
-
+                            local color = isEnemy and Color3.fromRGB(220, 50, 50) or Color3.fromRGB(50, 220, 80)
                             if Config.ESPBoxes then
-                                local baseSize = 40
-                                local scale = math.clamp(40 / (dist + 20), 0.3, 1.5)
-                                local height = baseSize * scale
-                                local width = height * 0.5
-
+                                local height = 40
+                                local width = 20
                                 if objs.box then
                                     Safe(function()
                                         objs.box.Visible = true
@@ -720,14 +654,13 @@ RunService.Heartbeat:Connect(function()
                                         objs.box.Position = Vector2.new(headScr.X - width/2, headScr.Y - height/2)
                                     end)
                                 end
-
                                 if Config.ESPHealthBar then
                                     local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
                                     local barH = height
                                     local barW = 3
                                     local barX = headScr.X + width/2 + 2
                                     local barY = headScr.Y - height/2
-                                    local hpColor = hp > 0.6 and Theme.HealthHigh or (hp > 0.3 and Theme.HealthMid or Theme.HealthLow)
+                                    local hpColor = hp > 0.6 and Color3.fromRGB(60, 220, 100) or (hp > 0.3 and Color3.fromRGB(255, 200, 40) or Color3.fromRGB(255, 60, 60))
                                     if objs.healthBG and objs.healthBar then
                                         Safe(function()
                                             objs.healthBG.Visible = true
@@ -748,7 +681,6 @@ RunService.Heartbeat:Connect(function()
                                 if objs.healthBG then Safe(function() objs.healthBG.Visible = false end) end
                                 if objs.healthBar then Safe(function() objs.healthBar.Visible = false end) end
                             end
-
                             if Config.ESPNames and objs.nameTag then
                                 Safe(function()
                                     objs.nameTag.Visible = true
@@ -758,7 +690,6 @@ RunService.Heartbeat:Connect(function()
                             else
                                 if objs.nameTag then Safe(function() objs.nameTag.Visible = false end) end
                             end
-
                             if Config.ESPDistance and objs.distTag then
                                 Safe(function()
                                     objs.distTag.Visible = true
@@ -841,8 +772,7 @@ end
 local Character, HumanoidRootPart, Humanoid = nil, nil, nil
 
 local function RefreshCharacter()
-    Character = LP.Character
-    if Character then
+    Character = LP.Character    if Character then
         HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
         Humanoid = Character:FindFirstChildOfClass("Humanoid")
     end
@@ -951,7 +881,7 @@ Safe(function()
     if FOVCircle then
         FOVCircle.Visible = false
         FOVCircle.Radius = Config.AimbotFOV
-        FOVCircle.Color = Theme.Accent
+        FOVCircle.Color = Color3.fromRGB(100, 60, 200)
         FOVCircle.Thickness = 1.5
         FOVCircle.Transparency = 0.6
         FOVCircle.Filled = false
@@ -1118,7 +1048,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
---   COMBAT (KillAuraのみ)
+--   COMBAT
 -- ============================================================
 local function GetHitRemote()
     local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:FindFirstChild("RemoteEvents")
@@ -1169,7 +1099,7 @@ local function TeleportToTarget()
 end
 
 -- ============================================================
---   MISC (NoFog / FullBright リセット対応)
+--   MISC
 -- ============================================================
 RunService.RenderStepped:Connect(function()
     if Config.NoFog then
@@ -1211,84 +1141,18 @@ LP.Idled:Connect(function()
 end)
 
 -- ============================================================
---   ★★★ メニュー作成 (優先: Rayfield, 代替: 本格UI) ★★★
--- ============================================================
-local RayfieldWindow = nil
-local RayfieldCreated = false
-
-local function CreateRayfieldUI()
-    if not RayfieldLoaded or not Rayfield then return false end
-    if RayfieldCreated then return true end
-    
-    local success, err = pcall(function()
-        RayfieldWindow = Rayfield:CreateWindow({
-            Name = "ZETA X",
-            Icon = 0,
-            LoadingTitle = "ZETA X",
-            LoadingSubtitle = "Xeno Compatible",
-            Theme = "Default",
-            ConfigurationSaving = { Enabled = false },
-            KeySystem = false,
-        })
-    end)
-    
-    if success and RayfieldWindow then
-        RayfieldCreated = true
-        RayfieldWindow.Visible = true
-        
-        -- Rayfield用UI構築 (簡略化)
-        local aimbotTab = RayfieldWindow:CreateTab("Aimbot", 4483362458)
-        aimbotTab:CreateToggle({Name = "Enable Aimbot", CurrentValue = Config.AimbotEnabled, Flag = "AimbotEnabled", Callback = function(v) Config.AimbotEnabled = v end})
-        aimbotTab:CreateToggle({Name = "Team Check", CurrentValue = Config.AimbotTeamCheck, Flag = "AimbotTeamCheck", Callback = function(v) Config.AimbotTeamCheck = v end})
-        aimbotTab:CreateToggle({Name = "Triggerbot", CurrentValue = Config.AimbotTriggerbot, Flag = "AimbotTriggerbot", Callback = function(v) Config.AimbotTriggerbot = v end})
-        aimbotTab:CreateToggle({Name = "Auto-Shoot", CurrentValue = Config.AimbotAutoShoot, Flag = "AimbotAutoShoot", Callback = function(v) Config.AimbotAutoShoot = v end})
-        aimbotTab:CreateSlider({Name = "FOV", Range = {10,400}, Increment = 5, Suffix = "px", CurrentValue = Config.AimbotFOV, Flag = "AimbotFOV", Callback = function(v) Config.AimbotFOV = v end})
-        aimbotTab:CreateDropdown({Name = "Mode", Options = {"Sticky","Normal"}, CurrentOption = {Config.AimbotMode}, Flag = "AimbotMode", Callback = function(v) Config.AimbotMode = v[1] end})
-        
-        local espTab = RayfieldWindow:CreateTab("ESP", 4483362458)
-        espTab:CreateToggle({Name = "Enable ESP", CurrentValue = Config.ESPEnabled, Flag = "ESPEnabled", Callback = function(v) Config.ESPEnabled = v end})
-        espTab:CreateToggle({Name = "Boxes", CurrentValue = Config.ESPBoxes, Flag = "ESPBoxes", Callback = function(v) Config.ESPBoxes = v end})
-        espTab:CreateToggle({Name = "Names", CurrentValue = Config.ESPNames, Flag = "ESPNames", Callback = function(v) Config.ESPNames = v end})
-        
-        local movTab = RayfieldWindow:CreateTab("Movement", 4483362458)
-        movTab:CreateToggle({Name = "Speed", CurrentValue = Config.SpeedEnabled, Flag = "SpeedEnabled", Callback = function(v) Config.SpeedEnabled = v end})
-        movTab:CreateToggle({Name = "Fly", CurrentValue = Config.FlyEnabled, Flag = "FlyEnabled", Callback = function(v) Config.FlyEnabled = v end})
-        movTab:CreateToggle({Name = "Noclip", CurrentValue = Config.NoclipEnabled, Flag = "NoclipEnabled", Callback = function(v) Config.NoclipEnabled = v end})
-        
-        local combatTab = RayfieldWindow:CreateTab("Combat", 4483362458)
-        combatTab:CreateToggle({Name = "Kill Aura", CurrentValue = Config.KillAura, Flag = "KillAura", Callback = function(v) Config.KillAura = v end})
-        
-        return true
-    end
-    return false
-end
-
--- ★★★ メニュー起動 ★★★
-task.spawn(function()
-    wait(1)
-    if not CreateRayfieldUI() then
-        CreateFallbackUI()
-    end
-end)
-
--- ============================================================
 --   ★★★ メニュー表示切替 (Kキー) ★★★
 -- ============================================================
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.K then
-        if RayfieldCreated and RayfieldWindow then
-            RayfieldWindow.Visible = not RayfieldWindow.Visible
-        elseif FallbackWindow then
-            FallbackWindow.Visible = not FallbackWindow.Visible
-        else
-            if not CreateRayfieldUI() then
-                CreateFallbackUI()
-            end
+        if MainWindow then
+            MenuVisible = not MenuVisible
+            MainWindow.Visible = MenuVisible
         end
     end
 end)
 
-print("[ZETA X] Xeno Compatible loaded. Menu: K key.")
+print("[ZETA X] Loaded. Menu: K key.")
 
 while true do task.wait(10) end
 
