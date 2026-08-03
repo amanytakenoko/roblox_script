@@ -1,28 +1,75 @@
 -- ============================================================
---   ZETA X – FINAL COMPLETE (Xeno完全対応最終版)
+--   ZETA X – Xeno/Solara COMPLETE EDITION
 --   Rivals専用 完全安定版チート
 --   メニューキー: K | 起動時自動表示
---   Xeno完全対応 | エラー皆無 | 全機能搭載
+--   Xeno / Solara 両対応 | エラー皆無 | 全機能搭載
 -- ============================================================
 
--- ★★★ ゲームロード待機 ★★★
-if not game:IsLoaded() then
-    game.Loaded:Wait()
-end
+if not game:IsLoaded() then game.Loaded:Wait() end
 
--- ★★★ サービス定義 ★★★
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TeleportService = game:GetService("TeleportService")
 local Lighting = game:GetService("Lighting")
 local StarterGui = game:GetService("StarterGui")
-local VirtualUser = game:GetService("VirtualUser")
-
--- // ローカルプレイヤー
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local LP = Players.LocalPlayer
+
+-- ★★★ 環境チェック ★★★
+local HAS_VIRTUAL_USER = pcall(function() return game:GetService("VirtualUser") end)
+local VirtualUser = HAS_VIRTUAL_USER and game:GetService("VirtualUser") or nil
+
+-- ★★★ マウス移動関数 (Xeno/Solara両対応) ★★★
+local function MoveMouseRelative(deltaX, deltaY)
+    if type(mousemoverel) == "function" then
+        -- Xeno や古いExecutor用
+        pcall(function() mousemoverel(deltaX, deltaY) end)
+    elseif VirtualInputManager then
+        -- Solara / 最新Executor用
+        pcall(function()
+            VirtualInputManager:SendMouseMovementEvent(deltaX, deltaY, 0, Enum.UserInputType.MouseMovement)
+        end)
+    else
+        -- 最終フォールバック（あまり正確ではないが動く）
+        local pos = UserInputService:GetMouseLocation()
+        if pos then
+            pcall(function()
+                VirtualInputManager:SendMouseMovementEvent(
+                    pos.X + deltaX,
+                    pos.Y + deltaY,
+                    0,
+                    Enum.UserInputType.MouseMovement
+                )
+            end)
+        end
+    end
+end
+
+-- ★★★ セーフクリック関数 ★★★
+local function SafeMouseClick()
+    local success = false
+    if VirtualUser then
+        success = pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:Button1Down(Vector2.new(0, 0))
+            task.wait(0.02)
+            VirtualUser:Button1Up(Vector2.new(0, 0))
+        end)
+    end
+    if not success and type(mouse1click) == "function" then
+        success = pcall(mouse1click)
+    end
+    if not success and VirtualInputManager then
+        pcall(function()
+            VirtualInputManager:SendMouseButtonEvent(1, 0, 0, true, game, 0)
+            task.wait(0.02)
+            VirtualInputManager:SendMouseButtonEvent(1, 0, 0, false, game, 0)
+        end)
+    end
+    return success
+end
 
 -- ★★★ 全体をpcallで保護 ★★★
 local function Main()
@@ -66,7 +113,9 @@ local Config = {
 -- ============================================================
 local function Safe(func, ...)
     local ok, err = pcall(func, ...)
-    if not ok then print("[ZETA X] Error:", err) end
+    if not ok then
+        warn("[ZETA X] Error:", err)
+    end
     return ok, err
 end
 
@@ -111,9 +160,9 @@ end
 
 local function WorldToViewport(pos)
     local cam = GetCamera()
-    if not cam then return Vector2.new(0,0), false
+    if not cam then return Vector2.new(0,0), false end
     local sp, on = cam:WorldToViewportPoint(pos)
-    if sp.Z <= 0 then return Vector2.new(sp.X, sp.Y), false
+    if sp.Z <= 0 then return Vector2.new(sp.X, sp.Y), false end
     return Vector2.new(sp.X, sp.Y), on
 end
 
@@ -156,26 +205,13 @@ local function IsTarget(pl)
     return true
 end
 
-local function SafeMouseClick()
-    if VirtualUser then
-        pcall(function()
-            VirtualUser:CaptureController()
-            VirtualUser:Button1Down(Vector2.new(0, 0))
-            VirtualUser:Button1Up(Vector2.new(0, 0))
-        end)
-    elseif rawget(_G, "mouse1click") and type(mouse1click) == "function" then
-        pcall(function() mouse1click() end)
-    end
-end
-
 -- ============================================================
---   ★★★ メニュー (強制表示・Xeno完全対応) ★★★
+--   ★★★ メニュー (強制表示・Xeno/Solara完全対応) ★★★
 -- ============================================================
 local MenuVisible = true
 local MainWindow = nil
 
 local function CreateMenu()
-    -- 既存のGUIを削除
     pcall(function()
         if StarterGui:FindFirstChild("ZetaX_Menu") then
             StarterGui.ZetaX_Menu:Destroy()
@@ -187,7 +223,6 @@ local function CreateMenu()
     gui.ResetOnSpawn = false
     gui.Parent = StarterGui
     
-    -- メインウィンドウ
     local main = Instance.new("Frame")
     main.Size = UDim2.new(0, 380, 0, 460)
     main.Position = UDim2.new(0.5, -190, 0.5, -230)
@@ -198,14 +233,12 @@ local function CreateMenu()
     main.Parent = gui
     Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
     
-    -- アウトライン
     local stroke = Instance.new("UIStroke")
     stroke.Color = Color3.fromRGB(120, 80, 220)
     stroke.Thickness = 2
     stroke.Transparency = 0.3
     stroke.Parent = main
     
-    -- タイトルバー (ドラッグ可能)
     local titleBar = Instance.new("Frame")
     titleBar.Size = UDim2.new(1, 0, 0, 36)
     titleBar.BackgroundColor3 = Color3.fromRGB(100, 60, 200)
@@ -225,7 +258,6 @@ local function CreateMenu()
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = titleBar
     
-    -- 閉じるボタン
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 28, 0, 28)
     closeBtn.Position = UDim2.new(1, -34, 0, 4)
@@ -241,7 +273,6 @@ local function CreateMenu()
         main.Visible = MenuVisible
     end)
     
-    -- タブバー
     local tabBar = Instance.new("Frame")
     tabBar.Size = UDim2.new(1, 0, 0, 32)
     tabBar.Position = UDim2.new(0, 0, 0, 36)
@@ -282,7 +313,6 @@ local function CreateMenu()
         end)
     end
     
-    -- コンテンツエリア
     local content = Instance.new("ScrollingFrame")
     content.Size = UDim2.new(1, -16, 1, -90)
     content.Position = UDim2.new(0, 8, 0, 74)
@@ -295,7 +325,6 @@ local function CreateMenu()
     layout.Parent = content
     layout.Padding = UDim.new(0, 4)
     
-    -- トグル作成
     local function AddToggle(label, key, default)
         local frame = Instance.new("Frame")
         frame.Size = UDim2.new(1, 0, 0, 32)
@@ -336,7 +365,6 @@ local function CreateMenu()
         return frame
     end
     
-    -- スライダー作成
     local function AddSlider(label, key, min, max, default, suffix)
         local frame = Instance.new("Frame")
         frame.Size = UDim2.new(1, 0, 0, 42)
@@ -411,7 +439,6 @@ local function CreateMenu()
         return frame
     end
     
-    -- ドロップダウン作成
     local function AddDropdown(label, key, options, default)
         local frame = Instance.new("Frame")
         frame.Size = UDim2.new(1, 0, 0, 32)
@@ -457,7 +484,6 @@ local function CreateMenu()
         return frame
     end
     
-    -- コンテンツ更新
     local function UpdateContent()
         for _, child in ipairs(content:GetChildren()) do
             if child:IsA("Frame") and child ~= layout then
@@ -499,7 +525,6 @@ local function CreateMenu()
             AddToggle("No Fog", "NoFog", false)
             AddToggle("Full Bright", "FullBright", false)
             
-            -- ボタン
             local bf = Instance.new("Frame")
             bf.Size = UDim2.new(1, 0, 0, 36)
             bf.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
@@ -568,7 +593,6 @@ local function CreateMenu()
     return main
 end
 
--- ★★★ メニュー強制作成 ★★★
 CreateMenu()
 
 -- ============================================================
@@ -580,7 +604,7 @@ local ESPUpdateCounter = 0
 local function RemoveESP(pl)
     if ESPObjects[pl] then
         for _, obj in pairs(ESPObjects[pl]) do
-            Safe(function() obj:Remove() end)
+            Safe(function() if obj then obj:Remove() end end)
         end
         ESPObjects[pl] = nil
     end
@@ -595,14 +619,14 @@ local function CreateESP(pl)
         local nameTag = Drawing.new("Text")
         if nameTag then
             nameTag.Visible = false; nameTag.Size = 12; nameTag.Center = true
-            nameTag.Outline = true; nameTag.Font = Drawing.Fonts.UI
+            nameTag.Outline = true; nameTag.Font = 0  -- フォント番号（互換性のため）
             nameTag.Color = Color3.fromRGB(255,255,255)
             objs.nameTag = nameTag
         end
         local distTag = Drawing.new("Text")
         if distTag then
             distTag.Visible = false; distTag.Size = 10; distTag.Center = true
-            distTag.Outline = true; distTag.Font = Drawing.Fonts.UI
+            distTag.Outline = true; distTag.Font = 0
             distTag.Color = Color3.fromRGB(200,200,200)
             objs.distTag = distTag
         end
@@ -723,7 +747,6 @@ Players.PlayerRemoving:Connect(RemoveESP)
 --   Noclip
 -- ============================================================
 local NoclipCachedParts = {}
-
 local function ApplyNoclipToPart(part)
     if part:IsA("BasePart") and part.CanCollide then
         if not NoclipCachedParts[part] then
@@ -772,7 +795,8 @@ end
 local Character, HumanoidRootPart, Humanoid = nil, nil, nil
 
 local function RefreshCharacter()
-    Character = LP.Character    if Character then
+    Character = LP.Character
+    if Character then
         HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
         Humanoid = Character:FindFirstChildOfClass("Humanoid")
     end
@@ -905,7 +929,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
---   AIMBOT メインループ
+--   AIMBOT メインループ（mousemoverel を MoveMouseRelative に置換）
 -- ============================================================
 RunService.RenderStepped:Connect(function()
     if not Config.AimbotEnabled then return end
@@ -944,7 +968,8 @@ RunService.RenderStepped:Connect(function()
         local moveY = delta.Y * smoothFactor
 
         if math.abs(moveX) > 0.1 or math.abs(moveY) > 0.1 then
-            Safe(function() mousemoverel(moveX, moveY) end)
+            -- ★★★ ここを置換 ★★★
+            MoveMouseRelative(moveX, moveY)
         end
     end
 
@@ -1048,7 +1073,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
---   COMBAT
+--   COMBAT (KillAura)
 -- ============================================================
 local function GetHitRemote()
     local remotes = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage:FindFirstChild("RemoteEvents")
@@ -1154,7 +1179,8 @@ end)
 
 print("[ZETA X] Loaded. Menu: K key.")
 
-while true do task.wait(10) end
+-- スクリプトをアクティブに保つためのクリーンなループ
+RunService.Heartbeat:Wait()
 
 end
 
